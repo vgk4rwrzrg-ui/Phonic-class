@@ -23,17 +23,22 @@
   .class-code { font-size: 1.4rem; font-weight: 900; letter-spacing: .15em;
                 background: #fff; padding: 6px 14px; border-radius: 8px; border: 1px solid #d7e3f0; }
   .share-link { font-size: .85rem; color: #567; word-break: break-all; }
-  .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: #fff; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; animation: slideIn 0.3s ease-out; }
-  .toast.success { background: #28a745; }
-  .toast.error { background: #dc3545; }
-  @keyframes slideIn { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  .loading { opacity: 0.5; pointer-events: none; }
+  .inline-form { display: inline; }
 </style>
 
 <h1>Teacher Dashboard</h1>
 <p>
-  <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button style="background:#888;">Log out</button></form>
+  <form method="post" action="{% url 'logout' %}" class="inline-form">{% csrf_token %}<button style="background:#888;">Log out</button></form>
 </p>
+
+{% comment %}
+Form conventions used on this page:
+  data-confirm="..."  ask before submitting (single source of truth, no inline onsubmit)
+  data-ajax="..."     POST via fetch and show the reply as a toast; the value names
+                      the DOM update to run on success. Forms WITHOUT data-ajax post
+                      normally; the view then redirects with a queued message, which
+                      base.html turns into a toast after the reload.
+{% endcomment %}
 
 {% if classroom %}
 <div class="class-header">
@@ -47,7 +52,7 @@
   </p>
   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px;">
     {% if classes|length > 1 %}
-    <form method="post" style="display:inline;">{% csrf_token %}
+    <form method="post" class="inline-form">{% csrf_token %}
       <input type="hidden" name="action" value="switch_class">
       <label>Switch class:
         <select name="class_id" onchange="this.form.submit()">
@@ -58,14 +63,14 @@
       </label>
     </form>
     {% endif %}
-    <form method="post" style="display:inline;">{% csrf_token %}
+    <form method="post" class="inline-form">{% csrf_token %}
       <input type="hidden" name="action" value="add_class">
       <input name="name" placeholder="New class name" required style="width:140px;">
       <button>Add class</button>
     </form>
     {% if classes|length > 1 %}
-    <form method="post" style="display:inline;"
-          onsubmit="return confirm('Delete this class and ALL its kids, words, and recordings?');">
+    <form method="post" class="inline-form"
+          data-confirm="Delete this class and ALL its kids, words, and recordings?">
       {% csrf_token %}<input type="hidden" name="action" value="del_class">
       <input type="hidden" name="class_id" value="{{ classroom.pk }}">
       <button class="danger">Delete this class</button>
@@ -76,15 +81,17 @@
 
 <div class="card">
   <h2>⭐ Points</h2>
-  <form method="post" style="display:inline" onsubmit='return confirm("Reset weekly points for this class?")'>
+  <form method="post" class="inline-form" data-ajax="reset_week"
+        data-confirm="Reset weekly points for this class?">
     {% csrf_token %}<input type="hidden" name="action" value="reset_week">
     <button class="danger">Reset weekly points</button>
   </form>
-  <form method="post" style="display:inline" onsubmit='return confirm("Wipe ALL points, streaks and progress for this class?")'>
+  <form method="post" class="inline-form"
+        data-confirm="Wipe ALL points, streaks and progress for this class?">
     {% csrf_token %}<input type="hidden" name="action" value="reset_all">
     <button class="danger">Reset everything</button>
   </form>
-  <form method="post" style="margin-top:10px;">
+  <form method="post" style="margin-top:10px;" data-ajax="noop">
     {% csrf_token %}<input type="hidden" name="action" value="set_goal">
     Class goal: <input name="goal" type="number" min="0" value="{{ classroom.class_goal }}" style="width:90px;">
     <button>Save</button>
@@ -101,26 +108,28 @@
     <button>Add kid</button>
   </form>
   <table>
-    <tr><th>Kid</th><th>Week</th><th>Total</th><th>Streak</th><th>PIN</th><th></th></tr>
+    <thead><tr><th>Kid</th><th>Week</th><th>Total</th><th>Streak</th><th>PIN</th><th></th></tr></thead>
+    <tbody>
     {% for kid in kids %}
     <tr>
       <td>{{ kid.icon }} {{ kid.name }}</td>
-      <td>{{ kid.points_week }}</td><td>{{ kid.points_total }}</td><td>{{ kid.streak }}</td>
+      <td data-week>{{ kid.points_week }}</td><td>{{ kid.points_total }}</td><td>{{ kid.streak }}</td>
       <td>
-        <form method="post" style="display:flex;gap:4px;">{% csrf_token %}
+        <form method="post" style="display:flex;gap:4px;" data-ajax="noop">{% csrf_token %}
           <input type="hidden" name="action" value="set_pin"><input type="hidden" name="kid_id" value="{{ kid.pk }}">
           <input name="pin" value="{{ kid.pin }}" maxlength="4" pattern="[0-9]{4}" style="width:64px;">
           <button>Set</button>
         </form>
       </td>
       <td>
-        <form method="post" onsubmit='return confirm("Delete {{ kid.name }}?")'>{% csrf_token %}
+        <form method="post" data-ajax="drop_row" data-confirm="Delete {{ kid.name }}?">{% csrf_token %}
           <input type="hidden" name="action" value="del_kid"><input type="hidden" name="kid_id" value="{{ kid.pk }}">
           <button class="danger">&#10005;</button>
         </form>
       </td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
 </div>
 
@@ -131,33 +140,35 @@
     <textarea name="words" rows="4" style="width:100%;" placeholder="One word per line. Optional level 1-3 after a comma, e.g.  FROG,2"></textarea>
     <div style="margin-top:6px;"><button>Add / update words</button></div>
   </form>
-  <form method="post" style="margin:8px 0;" onsubmit='return confirm("Deactivate every word?")'>
+  <form method="post" style="margin:8px 0;" data-ajax="all_words_off"
+        data-confirm="Deactivate every word?">
     {% csrf_token %}<input type="hidden" name="action" value="deactivate_all">
     <button class="danger">New week: deactivate all</button>
   </form>
   <table>
-    <tr><th>Word</th><th>Level</th><th>Active</th><th>Sound</th><th></th></tr>
+    <thead><tr><th>Word</th><th>Level</th><th>Active</th><th>Sound</th><th></th></tr></thead>
+    <tbody>
     {% for w in words %}
     <tr data-word="{{ w.text }}">
       <td>{{ w.text }}</td><td>{{ w.level }}</td>
       <td>
-        <form method="post">{% csrf_token %}
+        <form method="post" data-ajax="word_toggle">{% csrf_token %}
           <input type="hidden" name="action" value="toggle_word">
           <input type="hidden" name="word_id" value="{{ w.pk }}">
-          <button style="background:{% if w.active %}#3aa655{% else %}#999{% endif %};">{% if w.active %}On{% else %}Off{% endif %}</button>
+          <button class="toggle-word" style="background:{% if w.active %}#3aa655{% else %}#999{% endif %};">{% if w.active %}On{% else %}Off{% endif %}</button>
         </form>
       </td>
       <td>
         <div class="row-actions">
-          <button class="iconbtn" title="Play" onclick="playWord('{{ w.text }}')">▶</button>
-          <button class="iconbtn" title="Record" onclick="toggleRecord('word', '{{ w.text }}', this)">🎙</button>
-          <button class="iconbtn delbtn" title="Delete recording"
+          <button type="button" class="iconbtn" title="Play" onclick="playWord('{{ w.text }}')">▶</button>
+          <button type="button" class="iconbtn" title="Record" onclick="toggleRecord('word', '{{ w.text }}', this)">🎙</button>
+          <button type="button" class="iconbtn delbtn" title="Delete recording"
                   {% if w.text not in word_sounds %}style="display:none"{% endif %}
                   onclick="delSound('word', '{{ w.text }}', this)">✕</button>
         </div>
       </td>
       <td>
-        <form method="post" onsubmit='return confirm("Delete word {{ w.text }}?")'>{% csrf_token %}
+        <form method="post" data-ajax="drop_row" data-confirm="Delete word {{ w.text }}?">{% csrf_token %}
           <input type="hidden" name="action" value="del_word">
           <input type="hidden" name="word_id" value="{{ w.pk }}">
           <button class="danger">🗑</button>
@@ -165,6 +176,7 @@
       </td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
 </div>
 
@@ -172,21 +184,20 @@
   <h2>🔊 Letter sounds</h2>
   <p>▶ play · 🎙 record with your microphone (needs HTTPS) · ⬆ upload a file.
      A custom recording always wins over Google text-to-speech.</p>
-  <form id="uploadForm" class="row-actions" style="margin-bottom:12px;">
-    {% csrf_token %}
+  <form method="post" class="row-actions" style="margin-bottom:12px;" enctype="multipart/form-data">
+    {% csrf_token %}<input type="hidden" name="action" value="upload_sound">
     <input name="grapheme" placeholder="Sound, e.g. SH" style="width:110px;" required>
     <input name="audio" type="file" accept="audio/*" required>
     <button>Upload file</button>
-    <span id="uploadMsg" style="color:#1e7a3c;font-weight:700;"></span>
   </form>
   <div class="soundgrid">
     {% for row in sound_rows %}
     <div class="soundchip" data-grapheme="{{ row.grapheme }}">
       <div class="g">{{ row.grapheme }}</div>
       <div class="btnrow">
-        <button class="iconbtn" title="Play" onclick="playSound('{{ row.grapheme }}')">▶</button>
-        <button class="iconbtn" title="Record" onclick="toggleRecord('sound', '{{ row.grapheme }}', this)">🎙</button>
-        <button class="iconbtn delbtn" title="Delete"
+        <button type="button" class="iconbtn" title="Play" onclick="playSound('{{ row.grapheme }}')">▶</button>
+        <button type="button" class="iconbtn" title="Record" onclick="toggleRecord('sound', '{{ row.grapheme }}', this)">🎙</button>
+        <button type="button" class="iconbtn delbtn" title="Delete"
                 {% if not row.has %}style="display:none"{% endif %}
                 onclick="delSound('grapheme', '{{ row.grapheme }}', this)">✕</button>
       </div>
@@ -228,228 +239,53 @@
 <script>
 'use strict';
 var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+var RECORD_URL = '{% url "teacher_record" %}';
+var DELETE_URL = '{% url "teacher_delete" %}';
 
-// Toast notification system
-function showToast(message, type) {
-  type = type || 'success';
-  var toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;z-index:9999;animation:slideIn 0.3s;';
-  toast.style.background = type === 'error' ? '#d9534a' : '#3aa655';
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(function() { toast.remove(); }, 3000);
-}
+/* Post-success DOM updates, keyed by the form's data-ajax value. */
+var AFTER = {
+  noop: function () {},
+  drop_row: function (form) {
+    var row = form.closest('tr');
+    if (row) row.remove();
+  },
+  reset_week: function () {
+    document.querySelectorAll('td[data-week]').forEach(function (td) { td.textContent = '0'; });
+  },
+  word_toggle: function (form, data) {
+    var btn = form.querySelector('button');
+    btn.style.background = data.active ? '#3aa655' : '#999';
+    btn.textContent = data.active ? 'On' : 'Off';
+  },
+  all_words_off: function () {
+    document.querySelectorAll('button.toggle-word').forEach(function (btn) {
+      btn.style.background = '#999';
+      btn.textContent = 'Off';
+    });
+  }
+};
 
-// Generic AJAX form handler
-function handleFormSubmit(form, options) {
-  options = options || {};
-  var formData = new FormData(form);
-  var url = form.action || window.location.href;
-  
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'X-CSRFToken': CSRF },
-    body: formData
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success) {
-      if (data.message) showToast(data.message, 'success');
-      if (options.onSuccess) options.onSuccess(data);
-    } else {
-      showToast(data.message || 'Error', 'error');
-    }
-    return data;
-  })
-  .catch(function(err) {
-    showToast('Request failed', 'error');
-    throw err;
-  });
-}
+/* One delegated handler for every form on the page. */
+document.addEventListener('submit', function (e) {
+  var form = e.target;
+  if (!(form instanceof HTMLFormElement)) return;
 
-// Intercept all dashboard forms and convert to AJAX
-document.querySelectorAll('form[method="post"]').forEach(function(form) {
-  // Skip logout form
-  if (form.action && form.action.indexOf('/logout/') !== -1) return;
-  
-  form.addEventListener('submit', function(e) {
+  var ask = form.getAttribute('data-confirm');
+  if (ask && !window.confirm(ask)) {
     e.preventDefault();
-    var actionInput = form.querySelector('[name="action"]');
-    if (!actionInput) return;
-    
-    var action = actionInput.value;
-    
-    // Class management - reload page
-    if (['switch_class', 'add_class'].indexOf(action) !== -1) {
-      handleFormSubmit(form, {
-        onSuccess: function() { window.location.reload(); }
-      });
-      return;
-    }
-    
-    if (action === 'del_class') {
-      if (confirm('Delete this class and ALL its kids, words, and recordings?')) {
-        handleFormSubmit(form, {
-          onSuccess: function() { window.location.reload(); }
-        });
-      }
-      return;
-    }
-    
-    // Reset actions
-    if (action === 'reset_week') {
-      if (confirm('Reset weekly points for this class?')) {
-        handleFormSubmit(form, {
-          onSuccess: function() {
-            document.querySelectorAll('td:nth-child(2)').forEach(function(td) {
-              td.textContent = '0';
-            });
-          }
-        });
-      }
-      return;
-    }
-    
-    if (action === 'reset_all') {
-      if (confirm('Wipe ALL points, streaks and progress for this class?')) {
-        handleFormSubmit(form, {
-          onSuccess: function() { window.location.reload(); }
-        });
-      }
-      return;
-    }
-    
-    // Goal update
-    if (action === 'set_goal') {
-      handleFormSubmit(form, {
-        onSuccess: function(data) {
-          showToast('Goal updated to ' + data.goal, 'success');
-        }
-      });
-      return;
-    }
-    
-    // Add kid
-    if (action === 'add_kid') {
-      handleFormSubmit(form, {
-        onSuccess: function(data) {
-          var tbody = form.closest('table').querySelector('tbody');
-          var row = tbody.insertRow(-1);
-          row.innerHTML = '<td>' + data.icon + ' ' + data.name + '</td>' +
-                         '<td>0</td><td>0</td><td>0</td>' +
-                         '<td><form method="post" style="display:flex;gap:4px;">' +
-                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
-                         '<input type="hidden" name="action" value="set_pin">' +
-                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
-                         '<input name="pin" value="' + data.pin + '" maxlength="4" pattern="[0-9]{4}" style="width:64px;">' +
-                         '<button>Set</button></form></td>' +
-                         '<td><form method="post">' +
-                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
-                         '<input type="hidden" name="action" value="del_kid">' +
-                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
-                         '<button class="danger">&#10005;</button></form></td>';
-          form.reset();
-          row.querySelectorAll('form').forEach(attachFormHandler);
-        }
-      });
-      return;
-    }
-    
-    // Set PIN
-    if (action === 'set_pin') {
-      handleFormSubmit(form);
-      return;
-    }
-    
-    // Delete kid
-    if (action === 'del_kid') {
-      if (confirm('Delete this kid?')) {
-        var row = form.closest('tr');
-        handleFormSubmit(form, {
-          onSuccess: function() {
-            if (row) row.remove();
-          }
-        });
-      }
-      return;
-    }
-    
-    // Add words
-    if (action === 'add_words') {
-      handleFormSubmit(form, {
-        onSuccess: function(data) {
-          showToast('Added ' + data.count + ' words', 'success');
-          form.reset();
-        }
-      });
-      return;
-    }
-    
-    // Deactivate all words
-    if (action === 'deactivate_all') {
-      if (confirm('Deactivate every word?')) {
-        handleFormSubmit(form, {
-          onSuccess: function() {
-            document.querySelectorAll('[name="action"][value="toggle_word"]').forEach(function(input) {
-              var btn = input.form.querySelector('button');
-              btn.style.background = '#999';
-              btn.textContent = 'Off';
-            });
-          }
-        });
-      }
-      return;
-    }
-    
-    // Toggle word active
-    if (action === 'toggle_word') {
-      handleFormSubmit(form, {
-        onSuccess: function(data) {
-          var btn = form.querySelector('button');
-          btn.style.background = data.active ? '#3aa655' : '#999';
-          btn.textContent = data.active ? 'On' : 'Off';
-        }
-      });
-      return;
-    }
-    
-    // Delete word
-    if (action === 'del_word') {
-      if (confirm('Delete this word?')) {
-        var wordRow = form.closest('tr');
-        handleFormSubmit(form, {
-          onSuccess: function() {
-            if (wordRow) wordRow.remove();
-          }
-        });
-      }
-      return;
-    }
+    return;
+  }
+
+  var after = form.getAttribute('data-ajax');
+  if (!after) return;  // plain post: view redirects and queues a message toast
+
+  e.preventDefault();
+  var row = form.closest('tr');
+  postJSON(form.action || window.location.href, new FormData(form)).then(function (data) {
+    if (!data.ok) return;
+    (AFTER[after] || AFTER.noop)(form, data, row);
   });
 });
-
-// Helper to attach handler to dynamically added forms
-function attachFormHandler(form) {
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-    var actionInput = form.querySelector('[name="action"]');
-    if (!actionInput) return;
-    var action = actionInput.value;
-    
-    if (action === 'set_pin') {
-      handleFormSubmit(form);
-    } else if (action === 'del_kid') {
-      if (confirm('Delete this kid?')) {
-        var row = form.closest('tr');
-        handleFormSubmit(form, {
-          onSuccess: function() {
-            if (row) row.remove();
-          }
-        });
-      }
-    }
-  });
-}
 
 function playWord(w) {
   var a = new Audio('/wordsound/' + encodeURIComponent(w) + '/');
@@ -463,44 +299,47 @@ function playWord(w) {
   a.play();
 }
 
+function playSound(g) {
+  new Audio('/sound/' + encodeURIComponent(g) + '/').play();
+}
+
 function soundChip(g) { return document.querySelector('.soundchip[data-grapheme="' + g + '"]'); }
 function wordDelBtn(w) { return document.querySelector('tr[data-word="' + w + '"] .delbtn'); }
+
+function setBadge(g, css, label) {
+  var chip = soundChip(g);
+  if (!chip) return;
+  var badge = chip.querySelector('.badge');
+  if (badge) { badge.className = 'badge ' + css; badge.textContent = label; }
+}
 
 function markCustom(kind, value) {
   if (kind === 'word') {
     var b = wordDelBtn(value);
     if (b) b.style.display = '';
-  } else {
-    var chip = soundChip(value);
-    if (chip) {
-      var badge = chip.querySelector('.badge');
-      if (badge) { badge.className = 'badge custom'; badge.textContent = '🎙 Custom'; }
-      var d = chip.querySelector('.delbtn');
-      if (d) d.style.display = '';
-    }
+    return;
   }
+  setBadge(value, 'custom', '\ud83c\udf99 Custom');
+  var chip = soundChip(value);
+  var d = chip && chip.querySelector('.delbtn');
+  if (d) d.style.display = '';
+}
+
+/* FormData for the record/delete endpoints, which post blobs rather than a form. */
+function soundForm(kind, value) {
+  var fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append(kind === 'word' ? 'word' : 'grapheme', value);
+  return fd;
 }
 
 function delSound(kind, value, btn) {
-  if (!confirm('Delete this recording?')) return;
-  var fd = new FormData();
-  fd.append(kind === 'word' ? 'word' : 'grapheme', value);
-  fetch('/teacher/delete/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
-    .then(function (r) { return r.json(); })
-    .then(function (res) {
-      if (!res || !res.ok) { alert('Delete failed'); return; }
-      if (kind === 'word') {
-        if (btn) btn.style.display = 'none';
-      } else {
-        var chip = soundChip(value);
-        if (chip) {
-          var badge = chip.querySelector('.badge');
-          if (badge) { badge.className = 'badge none'; badge.textContent = '—'; }
-          if (btn) btn.style.display = 'none';
-        }
-      }
-    })
-    .catch(function () { alert('Delete failed'); });
+  if (!window.confirm('Delete this recording?')) return;
+  postJSON(DELETE_URL, soundForm(kind, value)).then(function (res) {
+    if (!res.ok) return;
+    if (btn) btn.style.display = 'none';
+    if (kind !== 'word') setBadge(value, 'none', '\u2014');
+  });
 }
 
 function extForType(t) {
@@ -511,64 +350,43 @@ function extForType(t) {
   return 'mp3';
 }
 
+function pickRecordingMime() {
+  var candidates = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg'];
+  for (var i = 0; i < candidates.length; i++) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+  }
+  return 'audio/webm';
+}
+
+var recorder = null;
+
 function toggleRecord(kind, value, btn) {
   if (recorder && recorder.state === 'recording') {
     recorder.stop();
     return;
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert('Recording needs a modern browser over HTTPS.');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    showToast('Recording needs a modern browser over HTTPS', 'error');
     return;
   }
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-    var mime = 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
-    else if (MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
-    else if (MediaRecorder.isTypeSupported('audio/ogg')) mime = 'audio/ogg';
-    recStream = stream; recKind = kind; recValue = value; recBtn = btn;
+    var mime = pickRecordingMime();
     var chunks = [];
     recorder = new MediaRecorder(stream, { mimeType: mime });
     recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = function () {
-      recStream.getTracks().forEach(function (t) { t.stop(); });
-      if (recBtn) { recBtn.textContent = '🎙'; recBtn.classList.remove('recording'); }
-      var blob = new Blob(chunks, { type: mime });
-      var fd = new FormData();
-      if (recKind === 'word') fd.append('word', recValue);
-      else fd.append('grapheme', recValue);
-      fd.append('audio', blob, recValue + '.' + extForType(mime));
-      fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (res) { if (res && res.ok) markCustom(recKind, recValue); else alert('Save failed'); })
-        .catch(function () { alert('Save failed'); });
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      if (btn) { btn.textContent = '\ud83c\udf99'; btn.classList.remove('recording'); }
       recorder = null;
+      var fd = soundForm(kind, value);
+      fd.append('audio', new Blob(chunks, { type: mime }), value + '.' + extForType(mime));
+      postJSON(RECORD_URL, fd).then(function (res) {
+        if (res.ok) markCustom(kind, value);
+      });
     };
     recorder.start();
-    if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
-  }).catch(function () { alert('Microphone access denied.'); });
-}
-
-var uploadForm = document.getElementById('uploadForm');
-if (uploadForm) {
-  uploadForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var g = uploadForm.querySelector('[name=grapheme]').value.trim().toUpperCase();
-    var fileInput = uploadForm.querySelector('[name=audio]');
-    if (!g || !fileInput.files.length) return;
-    var fd = new FormData();
-    fd.append('grapheme', g);
-    fd.append('audio', fileInput.files[0]);
-    fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (!res || !res.ok) { alert('Upload failed'); return; }
-        markCustom('sound', g);
-        var msg = document.getElementById('uploadMsg');
-        if (msg) { msg.textContent = 'Saved ✓'; setTimeout(function () { msg.textContent = ''; }, 2000); }
-        uploadForm.reset();
-      })
-      .catch(function () { alert('Upload failed'); });
-  });
+    if (btn) { btn.textContent = '\u23f9'; btn.classList.add('recording'); }
+  }).catch(function () { showToast('Microphone access denied', 'error'); });
 }
 </script>
 {% endblock %}

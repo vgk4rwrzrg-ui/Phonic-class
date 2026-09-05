@@ -22,11 +22,23 @@
                             border-radius: 8px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e4edf5; }
+  /* --- toasts: every server message is shown here, never on its own page --- */
+  #toasts { position: fixed; top: 16px; right: 16px; z-index: 9999;
+            display: flex; flex-direction: column; gap: 8px; max-width: min(90vw, 340px); }
+  .toast { background: #2f4256; color: #fff; padding: 11px 16px; border-radius: 10px;
+           box-shadow: 0 4px 14px rgba(0,0,0,.22); font-weight: 600; line-height: 1.35;
+           animation: toast-in .25s ease-out; }
+  .toast.success { background: #3aa655; }
+  .toast.error { background: #d9534a; }
+  .toast.leaving { opacity: 0; transform: translateY(-8px); transition: .25s ease-in; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
   .err { color: #c0392b; font-weight: 600; }
 </style>
 {% block extra_head %}{% endblock %}
 </head>
 <body>
+<div id="toasts" role="status" aria-live="polite"></div>
 <header>
   <span class="brand">🔤 Phonics Class</span>
   <a href="{% url 'kids_root' %}">Play</a>
@@ -34,6 +46,56 @@
   {% if user.is_authenticated %}<a href="{% url 'dashboard' %}">Teacher</a>{% endif %}
 </header>
 <main>{% block content %}{% endblock %}</main>
+{% if messages %}
+<script id="server-messages" type="application/json">[{% for m in messages %}{"text": "{{ m|escapejs }}", "level": "{{ m.tags|escapejs }}"}{% if not forloop.last %}, {% endif %}{% endfor %}]</script>
+{% endif %}
+<script>
+'use strict';
+/* Shared toast + form helpers. Views reply with {ok, message}; nothing ever
+   navigates to a JSON page. */
+window.showToast = function (message, type) {
+  if (!message) return;
+  var host = document.getElementById('toasts');
+  if (!host) return;
+  var el = document.createElement('div');
+  el.className = 'toast ' + (type === 'error' ? 'error' : 'success');
+  el.textContent = message;
+  host.appendChild(el);
+  setTimeout(function () {
+    el.classList.add('leaving');
+    setTimeout(function () { el.remove(); }, 250);
+  }, 3200);
+};
+
+/* POST a FormData/form and toast the reply. Resolves with the parsed JSON. */
+window.postJSON = function (url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+    body: body,
+    credentials: 'same-origin'
+  }).then(function (r) {
+    return r.json().catch(function () { return { ok: false, message: 'Server error' }; });
+  }).then(function (data) {
+    showToast(data.message, data.ok ? 'success' : 'error');
+    return data;
+  }).catch(function (err) {
+    showToast('Request failed \u2014 check your connection', 'error');
+    throw err;
+  });
+};
+
+/* Messages queued by a non-JS form post arrive here after the redirect. */
+(function () {
+  var node = document.getElementById('server-messages');
+  if (!node) return;
+  var items = [];
+  try { items = JSON.parse(node.textContent) || []; } catch (e) { return; }
+  items.forEach(function (m) {
+    showToast(m.text, m.level === 'error' ? 'error' : 'success');
+  });
+})();
+</script>
 {% block extra_script %}{% endblock %}
 </body>
 </html>
