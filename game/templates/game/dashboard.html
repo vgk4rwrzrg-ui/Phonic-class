@@ -23,6 +23,11 @@
   .class-code { font-size: 1.4rem; font-weight: 900; letter-spacing: .15em;
                 background: #fff; padding: 6px 14px; border-radius: 8px; border: 1px solid #d7e3f0; }
   .share-link { font-size: .85rem; color: #567; word-break: break-all; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: #fff; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; animation: slideIn 0.3s ease-out; }
+  .toast.success { background: #28a745; }
+  .toast.error { background: #dc3545; }
+  @keyframes slideIn { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .loading { opacity: 0.5; pointer-events: none; }
 </style>
 
 <h1>Teacher Dashboard</h1>
@@ -223,11 +228,229 @@
 <script>
 'use strict';
 var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
-var recorder = null, recStream = null, recKind = null, recValue = null, recBtn = null;
 
-function playSound(g) {
-  new Audio('/sound/' + encodeURIComponent(g) + '/').play();
+// Toast notification system
+function showToast(message, type) {
+  type = type || 'success';
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;z-index:9999;animation:slideIn 0.3s;';
+  toast.style.background = type === 'error' ? '#d9534a' : '#3aa655';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 3000);
 }
+
+// Generic AJAX form handler
+function handleFormSubmit(form, options) {
+  options = options || {};
+  var formData = new FormData(form);
+  var url = form.action || window.location.href;
+  
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF },
+    body: formData
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      if (data.message) showToast(data.message, 'success');
+      if (options.onSuccess) options.onSuccess(data);
+    } else {
+      showToast(data.message || 'Error', 'error');
+    }
+    return data;
+  })
+  .catch(function(err) {
+    showToast('Request failed', 'error');
+    throw err;
+  });
+}
+
+// Intercept all dashboard forms and convert to AJAX
+document.querySelectorAll('form[method="post"]').forEach(function(form) {
+  // Skip logout form
+  if (form.action && form.action.indexOf('/logout/') !== -1) return;
+  
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var actionInput = form.querySelector('[name="action"]');
+    if (!actionInput) return;
+    
+    var action = actionInput.value;
+    
+    // Class management - reload page
+    if (['switch_class', 'add_class'].indexOf(action) !== -1) {
+      handleFormSubmit(form, {
+        onSuccess: function() { window.location.reload(); }
+      });
+      return;
+    }
+    
+    if (action === 'del_class') {
+      if (confirm('Delete this class and ALL its kids, words, and recordings?')) {
+        handleFormSubmit(form, {
+          onSuccess: function() { window.location.reload(); }
+        });
+      }
+      return;
+    }
+    
+    // Reset actions
+    if (action === 'reset_week') {
+      if (confirm('Reset weekly points for this class?')) {
+        handleFormSubmit(form, {
+          onSuccess: function() {
+            document.querySelectorAll('td:nth-child(2)').forEach(function(td) {
+              td.textContent = '0';
+            });
+          }
+        });
+      }
+      return;
+    }
+    
+    if (action === 'reset_all') {
+      if (confirm('Wipe ALL points, streaks and progress for this class?')) {
+        handleFormSubmit(form, {
+          onSuccess: function() { window.location.reload(); }
+        });
+      }
+      return;
+    }
+    
+    // Goal update
+    if (action === 'set_goal') {
+      handleFormSubmit(form, {
+        onSuccess: function(data) {
+          showToast('Goal updated to ' + data.goal, 'success');
+        }
+      });
+      return;
+    }
+    
+    // Add kid
+    if (action === 'add_kid') {
+      handleFormSubmit(form, {
+        onSuccess: function(data) {
+          var tbody = form.closest('table').querySelector('tbody');
+          var row = tbody.insertRow(-1);
+          row.innerHTML = '<td>' + data.icon + ' ' + data.name + '</td>' +
+                         '<td>0</td><td>0</td><td>0</td>' +
+                         '<td><form method="post" style="display:flex;gap:4px;">' +
+                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
+                         '<input type="hidden" name="action" value="set_pin">' +
+                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
+                         '<input name="pin" value="' + data.pin + '" maxlength="4" pattern="[0-9]{4}" style="width:64px;">' +
+                         '<button>Set</button></form></td>' +
+                         '<td><form method="post">' +
+                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
+                         '<input type="hidden" name="action" value="del_kid">' +
+                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
+                         '<button class="danger">&#10005;</button></form></td>';
+          form.reset();
+          row.querySelectorAll('form').forEach(attachFormHandler);
+        }
+      });
+      return;
+    }
+    
+    // Set PIN
+    if (action === 'set_pin') {
+      handleFormSubmit(form);
+      return;
+    }
+    
+    // Delete kid
+    if (action === 'del_kid') {
+      if (confirm('Delete this kid?')) {
+        var row = form.closest('tr');
+        handleFormSubmit(form, {
+          onSuccess: function() {
+            if (row) row.remove();
+          }
+        });
+      }
+      return;
+    }
+    
+    // Add words
+    if (action === 'add_words') {
+      handleFormSubmit(form, {
+        onSuccess: function(data) {
+          showToast('Added ' + data.count + ' words', 'success');
+          form.reset();
+        }
+      });
+      return;
+    }
+    
+    // Deactivate all words
+    if (action === 'deactivate_all') {
+      if (confirm('Deactivate every word?')) {
+        handleFormSubmit(form, {
+          onSuccess: function() {
+            document.querySelectorAll('[name="action"][value="toggle_word"]').forEach(function(input) {
+              var btn = input.form.querySelector('button');
+              btn.style.background = '#999';
+              btn.textContent = 'Off';
+            });
+          }
+        });
+      }
+      return;
+    }
+    
+    // Toggle word active
+    if (action === 'toggle_word') {
+      handleFormSubmit(form, {
+        onSuccess: function(data) {
+          var btn = form.querySelector('button');
+          btn.style.background = data.active ? '#3aa655' : '#999';
+          btn.textContent = data.active ? 'On' : 'Off';
+        }
+      });
+      return;
+    }
+    
+    // Delete word
+    if (action === 'del_word') {
+      if (confirm('Delete this word?')) {
+        var wordRow = form.closest('tr');
+        handleFormSubmit(form, {
+          onSuccess: function() {
+            if (wordRow) wordRow.remove();
+          }
+        });
+      }
+      return;
+    }
+  });
+});
+
+// Helper to attach handler to dynamically added forms
+function attachFormHandler(form) {
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var actionInput = form.querySelector('[name="action"]');
+    if (!actionInput) return;
+    var action = actionInput.value;
+    
+    if (action === 'set_pin') {
+      handleFormSubmit(form);
+    } else if (action === 'del_kid') {
+      if (confirm('Delete this kid?')) {
+        var row = form.closest('tr');
+        handleFormSubmit(form, {
+          onSuccess: function() {
+            if (row) row.remove();
+          }
+        });
+      }
+    }
+  });
+}
+
 function playWord(w) {
   var a = new Audio('/wordsound/' + encodeURIComponent(w) + '/');
   a.onerror = function () {

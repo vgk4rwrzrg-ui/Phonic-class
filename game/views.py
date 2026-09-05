@@ -310,29 +310,32 @@ def dashboard(request):
                 new_id = None
             if any(c.pk == new_id for c in classes):
                 request.session["classroom_id"] = new_id
-            return redirect("dashboard")
+                return JsonResponse({"success": True, "message": "Class switched"})
+            return JsonResponse({"success": False, "message": "Invalid class"})
 
         if action == "add_class":
             name = (request.POST.get("name") or "").strip()[:60]
             if name:
                 cls = Class.objects.create(teacher=user, name=name)
                 request.session["classroom_id"] = cls.pk
-            return redirect("dashboard")
+                return JsonResponse({"success": True, "message": f"Class '{name}' created", "id": cls.pk, "code": cls.code})
+            return JsonResponse({"success": False, "message": "Name required"})
 
         if action == "del_class":
             try:
                 cid = int(request.POST.get("class_id"))
             except (TypeError, ValueError):
-                return redirect("dashboard")
+                return JsonResponse({"success": False, "message": "Invalid class ID"})
             cls = user.classes.filter(pk=cid).first()
             if cls and len(classes) > 1:  # never delete the last class
                 cls.delete()
                 if request.session.get("classroom_id") == cls.pk:
                     request.session.pop("classroom_id", None)
-            return redirect("dashboard")
+                return JsonResponse({"success": True, "message": "Class deleted"})
+            return JsonResponse({"success": False, "message": "Cannot delete last class"})
 
         if not classroom:
-            return redirect("dashboard")
+            return JsonResponse({"success": False, "message": "No active class"})
 
         # class-scoped actions
         if action == "add_kid":
@@ -340,14 +343,28 @@ def dashboard(request):
             pin = (request.POST.get("pin") or "").strip()[:4]
             icon = (request.POST.get("icon") or "🦊").strip()[:8]
             if name and pin.isdigit() and len(pin) == 4:
-                classroom.kids.get_or_create(name=name, defaults={"pin": pin, "icon": icon})
+                kid, created = classroom.kids.get_or_create(name=name, defaults={"pin": pin, "icon": icon})
+                if created:
+                    return JsonResponse({"success": True, "message": f"Added {name}", "id": kid.pk, "name": name, "icon": icon, "pin": pin})
+                return JsonResponse({"success": False, "message": "Kid already exists"})
+            return JsonResponse({"success": False, "message": "Invalid name or PIN"})
         elif action == "del_kid":
-            classroom.kids.filter(pk=request.POST.get("kid_id")).delete()
+            kid_id = request.POST.get("kid_id")
+            kid = classroom.kids.filter(pk=kid_id).first()
+            if kid:
+                name = kid.name
+                kid.delete()
+                return JsonResponse({"success": True, "message": f"Deleted {name}"})
+            return JsonResponse({"success": False, "message": "Kid not found"})
         elif action == "set_pin":
             pin = (request.POST.get("pin") or "").strip()[:4]
+            kid_id = request.POST.get("kid_id")
             if pin.isdigit() and len(pin) == 4:
-                classroom.kids.filter(pk=request.POST.get("kid_id")).update(pin=pin)
+                classroom.kids.filter(pk=kid_id).update(pin=pin)
+                return JsonResponse({"success": True, "message": "PIN updated"})
+            return JsonResponse({"success": False, "message": "Invalid PIN"})
         elif action == "add_words":
+            added = 0
             for line in (request.POST.get("words") or "").splitlines():
                 line = line.strip()
                 if not line:
@@ -359,21 +376,36 @@ def dashboard(request):
                 except ValueError:
                     level = 1
                 if text.isalpha():
-                    classroom.words.update_or_create(text=text, defaults={"level": level, "active": True})
+                    _, created = classroom.words.update_or_create(text=text, defaults={"level": level, "active": True})
+                    if created:
+                        added += 1
+            return JsonResponse({"success": True, "message": f"Added {added} words"})
         elif action == "toggle_word":
             w = classroom.words.filter(pk=request.POST.get("word_id")).first()
             if w:
                 w.active = not w.active
                 w.save()
+                return JsonResponse({"success": True, "message": f"{w.text} {'activated' if w.active else 'deactivated'}", "active": w.active})
+            return JsonResponse({"success": False, "message": "Word not found"})
         elif action == "del_word":
-            classroom.words.filter(pk=request.POST.get("word_id")).delete()
+            word_id = request.POST.get("word_id")
+            word = classroom.words.filter(pk=word_id).first()
+            if word:
+                text = word.text
+                word.delete()
+                return JsonResponse({"success": True, "message": f"Deleted {text}"})
+            return JsonResponse({"success": False, "message": "Word not found"})
         elif action == "deactivate_all":
+            count = classroom.words.filter(active=True).count()
             classroom.words.update(active=False)
+            return JsonResponse({"success": True, "message": f"Deactivated {count} words"})
         elif action == "reset_week":
             classroom.kids.update(points_week=0)
+            return JsonResponse({"success": True, "message": "Weekly points reset"})
         elif action == "reset_all":
             classroom.kids.update(points_week=0, points_total=0, streak=0, last_played=None)
             SoundMiss.objects.filter(kid__classroom=classroom).delete()
+            return JsonResponse({"success": True, "message": "All stats reset"})
         elif action == "set_goal":
             try:
                 goal = max(0, int(request.POST.get("goal", "")))
@@ -382,6 +414,8 @@ def dashboard(request):
             if goal is not None:
                 classroom.class_goal = goal
                 classroom.save()
+                return JsonResponse({"success": True, "message": f"Goal set to {goal}"})
+            return JsonResponse({"success": False, "message": "Invalid goal"})
         elif action == "upload_sound":
             g = (request.POST.get("grapheme") or "").strip().upper()[:8]
             f = request.FILES.get("audio")
@@ -390,17 +424,17 @@ def dashboard(request):
                 obj, _ = GraphemeSound.objects.get_or_create(classroom=classroom, grapheme=g)
                 obj.source = "custom"
                 obj.audio.save(f"{classroom.pk}_{g.lower()}.{ext}", ContentFile(cleaned), save=True)
+                return JsonResponse({"success": True, "message": f"Uploaded {g}"})
+            return JsonResponse({"success": False, "message": "Invalid upload"})
         elif action == "del_sound":
-            GraphemeSound.objects.filter(
-                classroom=classroom,
-                grapheme=(request.POST.get("grapheme") or "").strip().upper(),
-            ).delete()
+            grapheme = (request.POST.get("grapheme") or "").strip().upper()
+            GraphemeSound.objects.filter(classroom=classroom, grapheme=grapheme).delete()
+            return JsonResponse({"success": True, "message": f"Deleted {grapheme}"})
         elif action == "del_word_sound":
-            WordSound.objects.filter(
-                classroom=classroom,
-                word=(request.POST.get("word") or "").strip().upper(),
-            ).delete()
-        return redirect("dashboard")
+            word = (request.POST.get("word") or "").strip().upper()
+            WordSound.objects.filter(classroom=classroom, word=word).delete()
+            return JsonResponse({"success": True, "message": f"Deleted {word} sound"})
+        return JsonResponse({"success": False, "message": "Unknown action"})
 
     trouble = (SoundMiss.objects.filter(kid__classroom=classroom)
                .values("sound").annotate(total=Sum("count")).order_by("-total")[:12]) if classroom else []
