@@ -50,3 +50,21 @@ class Config(models.Model):
 
     def __str__(self):
         return f"Class goal: {self.class_goal}"
+
+
+class GraphemeSound(models.Model):
+    SOURCES = [("google", "Google TTS"), ("custom", "Teacher upload")]
+    grapheme = models.CharField(max_length=8, unique=True)
+    audio = models.FileField(upload_to="sounds/")
+    source = models.CharField(max_length=10, choices=SOURCES, default="google")
+
+    def __str__(self):
+        return f"{self.grapheme} ({self.source})"
+
+
+class WordSound(models.Model):
+    word = models.CharField(max_length=20, unique=True)
+    audio = models.FileField(upload_to="word_sounds/")
+
+    def __str__(self):
+        return self.word

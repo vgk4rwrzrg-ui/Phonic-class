@@ -1,5 +1,24 @@
 {% extends "game/base.html" %}
 {% block content %}
+<style>
+  .row-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .iconbtn { width: 38px; height: 38px; padding: 0; font-size: 1.05rem; line-height: 1;
+             background: #eef4fb; color: #234; border: 1px solid #d7e3f0; border-radius: 10px;
+             cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .iconbtn:hover { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+  .iconbtn.delbtn:hover { background: #d9534a; border-color: #d9534a; }
+  .iconbtn.recording { background: #d9534a; color: #fff; border-color: #d9534a; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .soundgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  .soundchip { background: #f8fbfe; border: 1px solid #e4edf5; border-radius: 12px; padding: 10px 8px; text-align: center; }
+  .soundchip .g { font-size: 1.5rem; font-weight: 900; color: #2eaa5e; margin-bottom: 8px; min-height: 1.5em; }
+  .soundchip .btnrow { display: flex; gap: 6px; justify-content: center; }
+  .soundchip .badge { display: inline-block; margin-top: 8px; font-size: .72rem; font-weight: 700;
+                      color: #456; background: #eef4fb; border-radius: 999px; padding: 2px 8px; }
+  .soundchip .badge.custom { background: #dff0e3; color: #1e7a3c; }
+  .soundchip .badge.google { background: #eef4fb; color: #456; }
+  .soundchip .badge.none { background: #f1f3f5; color: #99a; }
+</style>
 <h1>Teacher Dashboard</h1>
 <p><a href="{% url 'admin:index' %}">Django admin</a> &middot;
 <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button style="background:#888;">Log out</button></form></p>
@@ -66,9 +85,9 @@
     <button class="danger">New week: deactivate all</button>
   </form>
   <table>
-    <tr><th>Word</th><th>Level</th><th>Active</th><th></th></tr>
+    <tr><th>Word</th><th>Level</th><th>Active</th><th>Sound</th><th></th></tr>
     {% for w in words %}
-    <tr>
+    <tr data-word="{{ w.text }}">
       <td>{{ w.text }}</td><td>{{ w.level }}</td>
       <td>
         <form method="post">{% csrf_token %}
@@ -78,15 +97,52 @@
         </form>
       </td>
       <td>
-        <form method="post">{% csrf_token %}
+        <div class="row-actions">
+          <button class="iconbtn" title="Play" onclick="playWord('{{ w.text }}')">▶</button>
+          <button class="iconbtn" title="Record" onclick="toggleRecord('word', '{{ w.text }}', this)">🎙</button>
+          <button class="iconbtn delbtn" title="Delete recording"
+                  {% if w.text not in word_sounds %}style="display:none"{% endif %}
+                  onclick="delSound('word', '{{ w.text }}', this)">✕</button>
+        </div>
+      </td>
+      <td>
+        <form method="post" onsubmit='return confirm("Delete word {{ w.text }}?")'>{% csrf_token %}
           <input type="hidden" name="action" value="del_word">
           <input type="hidden" name="word_id" value="{{ w.pk }}">
-          <button class="danger">&#10005;</button>
+          <button class="danger">🗑</button>
         </form>
       </td>
     </tr>
     {% endfor %}
   </table>
+</div>
+
+<div class="card">
+  <h2>🔊 Letter sounds</h2>
+  <p>▶ play · 🎙 record with your microphone (needs HTTPS) · ⬆ upload a file.
+     A custom recording always wins over Google text-to-speech.</p>
+  <form id="uploadForm" class="row-actions" style="margin-bottom:12px;">
+    {% csrf_token %}
+    <input name="grapheme" placeholder="Sound, e.g. SH" style="width:110px;" required>
+    <input name="audio" type="file" accept="audio/*" required>
+    <button>Upload file</button>
+    <span id="uploadMsg" style="color:#1e7a3c;font-weight:700;"></span>
+  </form>
+  <div class="soundgrid">
+    {% for row in sound_rows %}
+    <div class="soundchip" data-grapheme="{{ row.grapheme }}">
+      <div class="g">{{ row.grapheme }}</div>
+      <div class="btnrow">
+        <button class="iconbtn" title="Play" onclick="playSound('{{ row.grapheme }}')">▶</button>
+        <button class="iconbtn" title="Record" onclick="toggleRecord('sound', '{{ row.grapheme }}', this)">🎙</button>
+        <button class="iconbtn delbtn" title="Delete"
+                {% if not row.has %}style="display:none"{% endif %}
+                onclick="delSound('grapheme', '{{ row.grapheme }}', this)">✕</button>
+      </div>
+      <span class="badge {{ row.css }}">{{ row.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="card">
@@ -105,4 +161,133 @@
   </details>
   {% else %}<p>No data yet.</p>{% endif %}
 </div>
+
+<script>
+'use strict';
+var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+var recorder = null, recStream = null, recKind = null, recValue = null, recBtn = null;
+
+function playSound(g) {
+  new Audio('/sound/' + encodeURIComponent(g) + '/').play();
+}
+function playWord(w) {
+  var a = new Audio('/wordsound/' + encodeURIComponent(w) + '/');
+  a.onerror = function () {
+    if ('speechSynthesis' in window) {
+      var u = new SpeechSynthesisUtterance(w.toLowerCase());
+      u.lang = 'en-GB';
+      window.speechSynthesis.speak(u);
+    }
+  };
+  a.play();
+}
+
+function soundChip(g) { return document.querySelector('.soundchip[data-grapheme="' + g + '"]'); }
+function wordDelBtn(w) { return document.querySelector('tr[data-word="' + w + '"] .delbtn'); }
+
+function markCustom(kind, value) {
+  if (kind === 'word') {
+    var b = wordDelBtn(value);
+    if (b) b.style.display = '';
+  } else {
+    var chip = soundChip(value);
+    if (chip) {
+      var badge = chip.querySelector('.badge');
+      if (badge) { badge.className = 'badge custom'; badge.textContent = '🎙 Custom'; }
+      var d = chip.querySelector('.delbtn');
+      if (d) d.style.display = '';
+    }
+  }
+}
+
+function delSound(kind, value, btn) {
+  if (!confirm('Delete this recording?')) return;
+  var fd = new FormData();
+  fd.append(kind === 'word' ? 'word' : 'grapheme', value);
+  fetch('/teacher/delete/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (!res || !res.ok) { alert('Delete failed'); return; }
+      if (kind === 'word') {
+        if (btn) btn.style.display = 'none';
+      } else {
+        var chip = soundChip(value);
+        if (chip) {
+          var badge = chip.querySelector('.badge');
+          if (badge) { badge.className = 'badge none'; badge.textContent = '—'; }
+          if (btn) btn.style.display = 'none';
+        }
+      }
+    })
+    .catch(function () { alert('Delete failed'); });
+}
+
+function extForType(t) {
+  if (t.indexOf('webm') >= 0) return 'webm';
+  if (t.indexOf('ogg') >= 0) return 'ogg';
+  if (t.indexOf('mp4') >= 0) return 'm4a';
+  if (t.indexOf('wav') >= 0) return 'wav';
+  return 'mp3';
+}
+
+function toggleRecord(kind, value, btn) {
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Recording needs a modern browser over HTTPS.');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+    var mime = 'audio/webm';
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+    else if (MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+    else if (MediaRecorder.isTypeSupported('audio/ogg')) mime = 'audio/ogg';
+    recStream = stream; recKind = kind; recValue = value; recBtn = btn;
+    var chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime });
+    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = function () {
+      recStream.getTracks().forEach(function (t) { t.stop(); });
+      if (recBtn) { recBtn.textContent = '🎙'; recBtn.classList.remove('recording'); }
+      var blob = new Blob(chunks, { type: mime });
+      var fd = new FormData();
+      if (recKind === 'word') fd.append('word', recValue);
+      else fd.append('grapheme', recValue);
+      fd.append('audio', blob, recValue + '.' + extForType(mime));
+      fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) { if (res && res.ok) markCustom(recKind, recValue); else alert('Save failed'); })
+        .catch(function () { alert('Save failed'); });
+      recorder = null;
+    };
+    recorder.start();
+    if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
+  }).catch(function () { alert('Microphone access denied.'); });
+}
+
+var uploadForm = document.getElementById('uploadForm');
+if (uploadForm) {
+  uploadForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var g = uploadForm.querySelector('[name=grapheme]').value.trim().toUpperCase();
+    var fileInput = uploadForm.querySelector('[name=audio]');
+    if (!g || !fileInput.files.length) return;
+    var fd = new FormData();
+    fd.append('grapheme', g);
+    fd.append('audio', fileInput.files[0]);
+    fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.ok) { alert('Upload failed'); return; }
+        markCustom('sound', g);
+        var msg = document.getElementById('uploadMsg');
+        if (msg) { msg.textContent = 'Saved ✓'; setTimeout(function () { msg.textContent = ''; }, 2000); }
+        uploadForm.reset();
+      })
+      .catch(function () { alert('Upload failed'); });
+  });
+}
+</script>
 {% endblock %}

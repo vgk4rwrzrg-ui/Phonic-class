@@ -10,11 +10,13 @@
   .box.filled { border:3px solid #2eaa5e; background:rgba(46,170,94,.18); }
   .box.filled .boxletter { opacity:1; transform:scale(1); }
   .boxletter.two { font-size:1.7rem; }
+  .boxletter.three { font-size:1.05rem; }
   #tiles { display:flex; gap:18px; justify-content:center; min-height:90px; flex-wrap:wrap; }
   .tile { width:76px; height:76px; border-radius:18px; color:#fff; font-size:2.5rem; font-weight:900;
           display:flex; align-items:center; justify-content:center; cursor:grab;
           box-shadow:0 4px 8px rgba(0,0,0,.22); touch-action:none; user-select:none; }
   .tile.two { font-size:1.7rem; }
+  .tile.three { font-size:1.15rem; }
   .tile.dragging { z-index:10; position:relative; box-shadow:0 12px 22px rgba(0,0,0,.35); cursor:grabbing; }
   .tile.snapback { transition:transform .25s ease-out; }
   .tile.shake { animation:shake .45s; }
@@ -42,6 +44,13 @@
   #celebrate .emoji { font-size:3.6rem; }
   #celebrate .points { font-size:2.4rem; font-weight:900; color:#fff; }
   #celebrate .cword { font-size:1.8rem; font-weight:800; color:#ffe45c; margin-top:6px; }
+  #celebrate .cmsg { font-size:1.25rem; font-weight:800; color:#fff; margin-top:10px; }
+  #celebrate .emoji { animation:bounce .5s infinite alternate; }
+  @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-12px); } }
+  #confetti { position:fixed; inset:0; pointer-events:none; z-index:45; }
+  #hint { text-align:center; min-height:1.6em; font-size:1.15rem; font-weight:800; color:#f5a623;
+          opacity:0; transform:translateY(6px); transition:opacity .25s, transform .25s; }
+  #hint.show { opacity:1; transform:translateY(0); }
   .empty { color:#556; font-size:1.1rem; text-align:center; }
 </style>
 
@@ -55,6 +64,8 @@
 
 <div id="boxes"></div>
 <div id="tiles"></div>
+<div id="hint"></div>
+<canvas id="confetti"></canvas>
 <div class="controls">
   <button class="bigbtn" id="hearword">&#128266; HEAR FULL WORD</button>
   <div class="speedwrap">
@@ -66,12 +77,13 @@
 </div>
 
 <div id="celebrate"><div class="ccard">
-  <div class="emoji">&#127881;&#11088;&#127881;</div>
+  <div class="emoji" id="celebrateEmoji">&#127881;&#11088;&#127881;</div>
   <div class="points">+10 Points!</div>
   <div class="cword" id="celebrateWord"></div>
+  <div class="cmsg" id="celebrateMsg"></div>
 </div></div>
 
-{{ words_json|json_script:"words-data" }}
+{{ words|json_script:"words-data" }}
 <form style="display:none">{% csrf_token %}</form>
 
 {% verbatim %}
@@ -80,7 +92,11 @@
 var WORDS = JSON.parse(document.getElementById('words-data').textContent);
 var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 var TILE_COLORS = ['#ff9f43', '#ee5a93', '#1abcb5', '#9b59d0', '#5c6bc0', '#26c281'];
-var PRAISE = ['Great job!', 'You did it!', 'Amazing!', 'Super spelling!'];
+var PRAISE = ['Great job!', 'You did it!', 'Amazing!', 'Super spelling!', 'Fantastic!',
+  'Wow, brilliant!', 'High five!', 'You are a star!', 'Awesome work!', 'Hooray!'];
+var EMOJIS = ['🎉⭐🎉', '🌟🎈🌟', '🎊👏🎊', '🏆✨🏆', '🚀⭐🚀', '🦄💫🦄'];
+var HINTS = ['Almost!', 'Try again!', 'So close!', 'You can do it!',
+  'Good try — listen again!', 'Not quite — try another spot!'];
 
 var wordIndex = 0, speechRate = 1.0, tiles = [], roundDone = false;
 (function () { // shuffle word order once per session
@@ -90,20 +106,37 @@ var wordIndex = 0, speechRate = 1.0, tiles = [], roundDone = false;
   }
 })();
 
-var LETTER_SOUNDS = { a:'ah', b:'buh', c:'kuh', d:'duh', e:'eh', f:'fff', g:'guh', h:'huh',
-  i:'ih', j:'juh', k:'kuh', l:'lll', m:'mmm', n:'nnn', o:'aw', p:'puh', q:'kwuh', r:'rrr',
-  s:'sss', t:'tuh', u:'uh', v:'vvv', w:'wuh', x:'ks', y:'yuh', z:'zzz' };
-var DIGRAPH_SOUNDS = { sh:'shh', ch:'chuh', th:'thh', ck:'kuh', ng:'ing', ee:'ee', oo:'oo', qu:'kwuh' };
+// Fallback text approximations (only used if the audio file / Google TTS is
+// unavailable). Short o is 'ah' (as in "hot"). Continuants use "-uh" so the
+// browser TTS doesn't spell them out as repeated letter names ("ess ess ess").
+var LETTER_SOUNDS = { a:'ah', b:'buh', c:'kuh', d:'duh', e:'eh', f:'fuh', g:'guh', h:'huh',
+  i:'ih', j:'juh', k:'kuh', l:'luh', m:'muh', n:'nuh', o:'ah', p:'puh', q:'kwuh', r:'ruh',
+  s:'suh', t:'tuh', u:'uh', v:'vuh', w:'wuh', x:'ks', y:'yuh', z:'zuh' };
+// Two-letter graphemes: consonant digraphs + vowel teams (most-common sound each).
+var DIGRAPH_SOUNDS = { sh:'shh', ch:'chuh', th:'thuh', ck:'kuh', ng:'ing', qu:'kwuh',
+  wh:'wuh', ph:'fuh', ee:'ee', oo:'oo', ai:'ay', ay:'ay', ea:'ee', oa:'oh', ie:'eye',
+  oi:'oy', oy:'oy', ou:'ow', ow:'ow', au:'aw', aw:'aw', ar:'ar', er:'ur', ir:'ur',
+  ur:'ur', or:'or' };
+// Three-letter graphemes.
+var TRIGRAPH_SOUNDS = { igh:'eye', tch:'chuh', dge:'juh', ear:'eer', air:'air' };
 
 function wordToUnits(text) {
   var units = [], i = 0, lower = text.toLowerCase();
   while (i < lower.length) {
+    var three = lower.substr(i, 3);
     var two = lower.substr(i, 2);
-    if (DIGRAPH_SOUNDS[two]) { units.push({ g: two.toUpperCase(), sound: DIGRAPH_SOUNDS[two] }); i += 2; }
-    else { units.push({ g: lower[i].toUpperCase(), sound: LETTER_SOUNDS[lower[i]] || lower[i] }); i += 1; }
+    if (TRIGRAPH_SOUNDS[three]) {
+      units.push({ g: three.toUpperCase(), sound: TRIGRAPH_SOUNDS[three] }); i += 3;
+    } else if (DIGRAPH_SOUNDS[two]) {
+      units.push({ g: two.toUpperCase(), sound: DIGRAPH_SOUNDS[two] }); i += 2;
+    } else {
+      units.push({ g: lower[i].toUpperCase(), sound: LETTER_SOUNDS[lower[i]] || lower[i] }); i += 1;
+    }
   }
   return units;
 }
+
+function sizeClass(g) { return g.length === 1 ? '' : (g.length === 2 ? ' two' : ' three'); }
 
 function api(path, data) {
   return fetch(path, {
@@ -116,6 +149,7 @@ function api(path, data) {
 function speak(text, opts) {
   opts = opts || {};
   if (!('speechSynthesis' in window)) return;
+  if (opts.cancel) window.speechSynthesis.cancel();
   var u = new SpeechSynthesisUtterance(text);
   u.rate = (opts.rate !== undefined) ? opts.rate : speechRate;
   u.pitch = opts.pitch || 1.05;
@@ -123,7 +157,49 @@ function speak(text, opts) {
   window.speechSynthesis.speak(u);
 }
 function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
-function playUnit(tile) { speak(tile.sound); }
+
+// Letter sounds come from /sound/<grapheme>/ (custom file if uploaded,
+// otherwise Google TTS). Pool one <audio> per grapheme and preload per round.
+var audioPool = {}, currentAudio = null;
+function audioFor(g) {
+  if (!audioPool[g]) {
+    var a = new Audio('/sound/' + encodeURIComponent(g) + '/');
+    a.preload = 'auto';
+    a.load();
+    audioPool[g] = a;
+  }
+  return audioPool[g];
+}
+function playUnit(tile) {
+  var a = audioFor(tile.letter);
+  if (currentAudio && currentAudio !== a) {
+    try { currentAudio.pause(); currentAudio.currentTime = 0; } catch (e) {}
+  }
+  currentAudio = a;
+  try { a.currentTime = 0; } catch (e) {}
+  var p = a.play();
+  if (p && p.catch) p.catch(function () { speak(tile.sound, { cancel: true }); });
+}
+
+function playWord(w, callback) {
+  var a = new Audio('/wordsound/' + encodeURIComponent(w.text) + '/');
+  var finished = false;
+  var fallback = function () {
+    if (finished) return;
+    finished = true;
+    speak(w.text.toLowerCase());
+    setTimeout(function () { if (callback) callback(); }, 900);
+  };
+  var done = function () {
+    if (finished) return;
+    finished = true;
+    if (callback) callback();
+  };
+  a.addEventListener('ended', done, { once: true });
+  a.addEventListener('error', fallback, { once: true });
+  var p = a.play();
+  if (p && p.catch) p.catch(fallback);
+}
 
 function currentWord() { return WORDS.length ? WORDS[wordIndex % WORDS.length] : null; }
 function shuffle(a) {
@@ -150,18 +226,19 @@ function setupRound() {
     var b = document.createElement('div');
     b.className = 'box'; b.dataset.slot = i;
     var span = document.createElement('span');
-    span.className = 'boxletter' + (u.g.length > 1 ? ' two' : '');
+    span.className = 'boxletter' + sizeClass(u.g);
     span.textContent = u.g;
     b.appendChild(span); boxesEl.appendChild(b);
   });
   tiles.forEach(function (t) {
     var el = document.createElement('div');
-    el.className = 'tile' + (t.letter.length > 1 ? ' two' : '');
+    el.className = 'tile' + sizeClass(t.letter);
     el.textContent = t.letter;
     el.style.background = 'linear-gradient(' + TILE_COLORS[t.slot % TILE_COLORS.length] + ', ' +
                           TILE_COLORS[t.slot % TILE_COLORS.length] + 'cc)';
     attachTileGestures(el, t);
     tilesEl.appendChild(el);
+    audioFor(t.letter);   // preload the sound for this tile
   });
 }
 
@@ -176,7 +253,11 @@ function attachTileGestures(el, tile) {
   el.addEventListener('pointermove', function (e) {
     if (pid === null || e.pointerId !== pid) return;
     var dx = e.clientX - startX, dy = e.clientY - startY;
-    if (!dragging && Math.hypot(dx, dy) > 10) { dragging = true; el.classList.add('dragging'); }
+    if (!dragging && Math.hypot(dx, dy) > 10) {
+      dragging = true;
+      el.classList.add('dragging');
+      playUnit(tile);   // say the sound while the tile is being dragged
+    }
     if (dragging) el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(1.15)';
   });
   el.addEventListener('pointerup', function (e) {
@@ -210,6 +291,7 @@ function handleDrop(el, tile, x, y) {
     vibrate([30, 40, 30]);
     api('/api/miss/', { sound: tile.letter });   // report trouble sound to teacher
     snapBack(el, true);
+    showHint();
   }
 }
 
@@ -225,18 +307,80 @@ function snapBack(el, withShake) {
   }, 260);
 }
 
+var confettiCanvas = document.getElementById('confetti');
+var confettiCtx = confettiCanvas.getContext('2d');
+var confettiPieces = [];
+var confettiRunning = false;
+var CONFETTI_COLORS = ['#ff9f43', '#ee5a93', '#1abcb5', '#9b59d0', '#5c6bc0', '#26c281', '#ffe45c', '#ff6b6b'];
+
+function confettiBurst() {
+  confettiCanvas.width = window.innerWidth;
+  confettiCanvas.height = window.innerHeight;
+  confettiPieces = [];
+  for (var i = 0; i < 130; i++) {
+    confettiPieces.push({
+      x: Math.random() * confettiCanvas.width,
+      y: -20 - Math.random() * confettiCanvas.height * 0.5,
+      w: 6 + Math.random() * 6,
+      h: 8 + Math.random() * 10,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      vx: -2 + Math.random() * 4,
+      vy: 2 + Math.random() * 4,
+      rot: Math.random() * Math.PI,
+      vr: -0.2 + Math.random() * 0.4
+    });
+  }
+  if (!confettiRunning) confettiLoop();
+}
+
+function confettiLoop() {
+  confettiRunning = true;
+  confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+  var alive = false;
+  confettiPieces.forEach(function (p) {
+    p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+    if (p.y < confettiCanvas.height + 40) alive = true;
+    confettiCtx.save();
+    confettiCtx.translate(p.x, p.y);
+    confettiCtx.rotate(p.rot);
+    confettiCtx.fillStyle = p.color;
+    confettiCtx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    confettiCtx.restore();
+  });
+  if (alive) {
+    requestAnimationFrame(confettiLoop);
+  } else {
+    confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    confettiRunning = false;
+  }
+}
+
+function showHint() {
+  var msg = HINTS[Math.floor(Math.random() * HINTS.length)];
+  var el = document.getElementById('hint');
+  el.textContent = msg;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  speak(msg, { cancel: true });
+  setTimeout(function () { el.classList.remove('show'); }, 1800);
+}
+
 function checkWin() {
   if (!tiles.every(function (t) { return t.placed; })) return;
   roundDone = true;
   var w = currentWord();
-  speak(w.text.toLowerCase());
-  speak(PRAISE[Math.floor(Math.random() * PRAISE.length)]);
+  var praise = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+  document.getElementById('celebrateEmoji').textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+  document.getElementById('celebrateMsg').textContent = praise;
+  document.getElementById('celebrateWord').textContent = w.text;
+  playWord(w, function () { speak(praise); });
   api('/api/score/', { points: 10 }).then(function (res) {
     if (res && res.ok) document.getElementById('score').textContent = res.points_week;
   });
-  document.getElementById('celebrateWord').textContent = w.text;
   var ov = document.getElementById('celebrate');
   ov.classList.add('show');
+  confettiBurst();
   setTimeout(function () {
     ov.classList.remove('show');
     wordIndex++;
@@ -246,7 +390,7 @@ function checkWin() {
 
 document.getElementById('hearword').addEventListener('click', function () {
   var w = currentWord();
-  if (w) speak(w.text.toLowerCase());
+  if (w) playWord(w);
 });
 document.querySelectorAll('.speedbtn').forEach(function (b) {
   b.addEventListener('click', function () {

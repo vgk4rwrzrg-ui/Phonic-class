@@ -26,6 +26,55 @@ python manage.py runserver
    optional `,level`). Or just toggle individual words on/off.
 3. "Reset weekly points" (all-time totals and streaks are kept).
 
+## Letter sounds
+
+The game says each letter/digraph by playing `/sound/<grapheme>/` (e.g. `/sound/SH/`),
+and each whole word via `/wordsound/<word>/`. Priority for a letter sound is:
+(1) a teacher recording/upload, (2) a Google TTS file already cached on disk,
+(3) Google TTS generated on the spot and then cached. A custom whole-word
+recording overrides the browser's spoken word; otherwise it uses speech synthesis.
+
+On the teacher dashboard, the **Letter sounds** card lists every supported sound
+with **▶ Play**, **🎙 Record** (uses your microphone — needs HTTPS), and an
+upload-file form. The **Words** card has the same ▶/🎙 controls per word.
+
+### Recording sounds (recommended)
+
+Recording your own voice is the most accurate and licence-free option. It needs
+a microphone and HTTPS (see the deploy notes below).
+
+### Importing downloaded sounds
+
+If you download sound files from a free source (see below), name each file after
+its sound (`SH.mp3`, `CH.wav`, `A.mp3`, ...), drop them in a folder, then:
+
+```bash
+python manage.py importsounds /path/to/folder
+```
+
+### Finding free sound files
+
+- Wikimedia Commons has free IPA pronunciation audio (e.g. search "IPA audio").
+- Open-licensed phonics packs are available from sites like freesound.org
+  (filter by Creative Commons 0) — be sure to check each file's licence.
+- You can also use Google TTS (below) as a fallback for anything you haven't
+  recorded yet.
+
+### Google TTS fallback
+
+To pre-build the Google sounds so kids get instant audio:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+python manage.py makevoices
+```
+
+- Create a Google Cloud service account, enable the **Cloud Text-to-Speech**
+  API, and download its JSON key. Point `GOOGLE_APPLICATION_CREDENTIALS` at it
+  (set it in the environment or the systemd unit).
+- `GOOGLE_TTS_VOICE` optionally overrides the voice (default `en-US-Neural2-C`).
+- A custom recording always wins over Google TTS.
+
 ## Production deploy (home server)
 
 Set environment variables (e.g. in the systemd unit):

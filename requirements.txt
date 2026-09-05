@@ -1,3 +1,4 @@
 Django>=5.0,<6.0
 gunicorn>=22.0
 whitenoise>=6.6
+google-cloud-texttospeech>=2.16
