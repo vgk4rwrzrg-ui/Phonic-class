@@ -3,5 +3,6 @@
 <h1>Teacher login</h1>
 <div class="card">
   <form method="post">{% csrf_token %}{{ form.as_p }}<button>Log in</button></form>
+  <p style="margin-top:10px;">New teacher? <a href="{% url 'signup' %}">Sign up</a></p>
 </div>
 {% endblock %}

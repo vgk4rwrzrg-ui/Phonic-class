@@ -1,0 +1,31 @@
+{% extends "game/base.html" %}
+{% block viewport %}width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no{% endblock %}
+{% block extra_head %}<style>html, body { touch-action: pan-x pan-y; }</style>{% endblock %}
+{% block content %}
+<h1>🔤 Phonics Class</h1>
+<div class="card">
+  <h2>Join your class</h2>
+  <p>Enter the class code your teacher gave you:</p>
+  <form method="post" action="{% url 'join_class' %}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <input name="code" placeholder="e.g. ABC123" maxlength="12" required
+           style="font-size:1.3rem;padding:10px 14px;width:180px;text-transform:uppercase;letter-spacing:.15em;text-align:center;font-weight:800;">
+    <button>Go</button>
+  </form>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+</div>
+<p style="text-align:center;color:#789;">Teacher? <a href="{% url 'login' %}">Log in</a> or <a href="{% url 'signup' %}">Sign up</a></p>
+{% endblock %}
+{% block extra_script %}
+<script>
+// Disable all zooming: pinch, double-tap, ctrl+wheel, and keyboard zoom.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+  document.addEventListener(ev, function (e) { e.preventDefault(); });
+});
+document.addEventListener('dblclick', function (e) { e.preventDefault(); }, { passive: false });
+document.addEventListener('wheel', function (e) { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=')) e.preventDefault();
+});
+</script>
+{% endblock %}

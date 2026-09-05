@@ -1,6 +1,8 @@
 {% extends "game/base.html" %}
+{% block viewport %}width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no{% endblock %}
+{% block extra_head %}<style>html, body { touch-action: pan-x pan-y; }</style>{% endblock %}
 {% block content %}
-<h1>🏆 Leaderboard</h1>
+<h1>🏆 Leaderboard — {{ classroom.name }}</h1>
 <div class="card">
   <h2>Class goal</h2>
   <div style="background:#e4edf5;border-radius:999px;height:26px;overflow:hidden;">
@@ -23,4 +25,17 @@
     {% endfor %}
   </table>
 </div>
+{% endblock %}
+{% block extra_script %}
+<script>
+// Disable all zooming: pinch, double-tap, ctrl+wheel, and keyboard zoom.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+  document.addEventListener(ev, function (e) { e.preventDefault(); });
+});
+document.addEventListener('dblclick', function (e) { e.preventDefault(); }, { passive: false });
+document.addEventListener('wheel', function (e) { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=')) e.preventDefault();
+});
+</script>
 {% endblock %}

@@ -1,0 +1,23 @@
+{% extends "game/base.html" %}
+{% block content %}
+<h1>Teacher sign up</h1>
+<div class="card">
+  <p>Create your account and your first class. Kids will use your class code to join.</p>
+  <form method="post">
+    {% csrf_token %}
+    <p><label>Username<br>{{ form.username }}</label>
+       {% if form.username.errors %}<span class="err">{{ form.username.errors.as_text }}</span>{% endif %}</p>
+    <p><label>Email (optional)<br>{{ form.email }}</label>
+       {% if form.email.errors %}<span class="err">{{ form.email.errors.as_text }}</span>{% endif %}</p>
+    <p><label>Class name<br>{{ form.class_name }}</label>
+       {% if form.class_name.errors %}<span class="err">{{ form.class_name.errors.as_text }}</span>{% endif %}</p>
+    <p><label>Password<br>{{ form.password1 }}</label>
+       {% if form.password1.errors %}<span class="err">{{ form.password1.errors.as_text }}</span>{% endif %}</p>
+    <p><label>Confirm password<br>{{ form.password2 }}</label>
+       {% if form.password2.errors %}<span class="err">{{ form.password2.errors.as_text }}</span>{% endif %}</p>
+    {% if form.non_field_errors %}<p class="err">{{ form.non_field_errors.as_text }}</p>{% endif %}
+    <button>Create account</button>
+  </form>
+  <p style="margin-top:10px;">Already have an account? <a href="{% url 'login' %}">Log in</a></p>
+</div>
+{% endblock %}

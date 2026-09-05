@@ -2,15 +2,17 @@ import json
 import mimetypes
 from datetime import date, timedelta
 
-from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth import login
+from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.db.models import Sum
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
-from . import tts
-from .models import Config, GraphemeSound, Kid, SoundMiss, Word, WordSound
+from . import audio, tts
+from .forms import TeacherSignupForm
+from .models import Class, GraphemeSound, Kid, SoundMiss, Word, WordSound
 
 mimetypes.add_type("audio/mpeg", ".mp3")
 mimetypes.add_type("audio/wav", ".wav")
@@ -25,8 +27,8 @@ def _content_type(name):
     return mime or "audio/mpeg"
 
 
-def _sound_rows():
-    sound_map = {s.grapheme: s for s in GraphemeSound.objects.all()}
+def _sound_rows(classroom):
+    sound_map = {s.grapheme: s for s in classroom.grapheme_sounds.all()}
     rows = []
     for g in sorted(tts.GRAPHEME_IPA):
         s = sound_map.get(g)
@@ -36,14 +38,16 @@ def _sound_rows():
             label, css = "🤖 Google", "google"
         else:
             label, css = "—", "none"
-        rows.append({
-            "grapheme": g,
-            "has": bool(s),
-            "source": s.source if s else None,
-            "label": label,
-            "css": css,
-        })
+        rows.append({"grapheme": g, "has": bool(s),
+                     "source": s.source if s else None,
+                     "label": label, "css": css})
     return rows
+
+
+def get_classroom(request):
+    """Active classroom from session (kids or teacher session)."""
+    cr_id = request.session.get("classroom_id")
+    return Class.objects.filter(pk=cr_id).first() if cr_id else None
 
 
 def get_kid(request):
@@ -51,17 +55,78 @@ def get_kid(request):
     return Kid.objects.filter(pk=kid_id).first() if kid_id else None
 
 
+def _teacher_classroom(request):
+    """Active classroom owned by the signed-in teacher."""
+    if not request.user.is_authenticated:
+        return None
+    cr_id = request.session.get("classroom_id")
+    if cr_id:
+        cr = Class.objects.filter(pk=cr_id, teacher=request.user).first()
+        if cr:
+            return cr
+    return request.user.classes.order_by("name").first()
+
+
+# -------- Teacher auth --------
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+    if request.method == "POST":
+        form = TeacherSignupForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            cls = Class.objects.create(teacher=user, name=form.cleaned_data["class_name"])
+            request.session["classroom_id"] = cls.pk
+            login(request, user)
+            return redirect("dashboard")
+    else:
+        form = TeacherSignupForm()
+    return render(request, "game/signup.html", {"form": form})
+
+
+# -------- Kids flow --------
+
+def kids_root(request):
+    """Landing page: join a class by code, or go to picker if class in session."""
+    if get_classroom(request):
+        return redirect("picker")
+    return render(request, "game/kids_root.html")
+
+
+@require_POST
+def join_class(request):
+    code = (request.POST.get("code") or "").strip().upper()
+    cr = Class.objects.filter(code=code).first()
+    if not cr:
+        return render(request, "game/kids_root.html", {"error": "No class with that code."})
+    request.session["classroom_id"] = cr.pk
+    return redirect("picker")
+
+
+def class_join(request, code):
+    cr = Class.objects.filter(code=code.upper()).first()
+    if not cr:
+        return render(request, "game/kids_root.html", {"error": "No class with that code.", "bad_code": code})
+    request.session["classroom_id"] = cr.pk
+    return redirect("picker")
+
+
 def picker(request):
+    cr = get_classroom(request)
+    if not cr:
+        return redirect("kids_root")
     error = None
     if request.method == "POST":
-        kid = Kid.objects.filter(pk=request.POST.get("kid_id")).first()
+        kid = cr.kids.filter(pk=request.POST.get("kid_id")).first()
         pin = (request.POST.get("pin") or "").strip()
         if kid and pin == kid.pin:
             request.session["kid_id"] = kid.pk
             return redirect("game")
         error = "Oops, wrong PIN. Try again!"
-    return render(request, "game/picker.html",
-                  {"kids": Kid.objects.order_by("name"), "error": error})
+    return render(request, "game/picker.html", {
+        "classroom": cr, "kids": cr.kids.order_by("name"), "error": error,
+    })
 
 
 def logout_kid(request):
@@ -69,13 +134,21 @@ def logout_kid(request):
     return redirect("picker")
 
 
+def switch_class(request):
+    request.session.pop("classroom_id", None)
+    request.session.pop("kid_id", None)
+    return redirect("kids_root")
+
+
 def game(request):
     kid = get_kid(request)
     if not kid:
         return redirect("picker")
-    words = list(Word.objects.filter(active=True).values("text", "level"))
-    return render(request, "game/game.html", {"kid": kid, "words": words})
+    words = list(kid.classroom.words.filter(active=True).values("text", "level"))
+    return render(request, "game/game.html", {"kid": kid, "words": words, "classroom": kid.classroom})
 
+
+# -------- APIs --------
 
 def _json_body(request):
     try:
@@ -119,94 +192,161 @@ def api_miss(request):
     return JsonResponse({"ok": True})
 
 
+# -------- Sound endpoints (scoped by kid's or teacher's class) --------
+
 def sound(request, grapheme):
     g = (grapheme or "").strip().upper()[:8]
     if not g:
         return JsonResponse({"ok": False, "error": "missing sound"}, status=400)
-    if not (get_kid(request) or request.user.is_staff):
+    kid = get_kid(request)
+    cr = kid.classroom if kid else _teacher_classroom(request)
+    if not cr:
         return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
-    obj = GraphemeSound.objects.filter(grapheme=g).first()
+    obj = GraphemeSound.objects.filter(classroom=cr, grapheme=g).first()
     if obj and obj.audio:
         return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
     try:
-        audio = tts.synthesize(g)
-    except Exception as exc:  # no credentials / not installed / network / quota
+        raw = tts.synthesize(g)
+    except Exception as exc:  # no credentials / network / quota
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
-    obj = GraphemeSound(grapheme=g, source="google")
-    obj.audio.save(f"{g.lower()}.mp3", ContentFile(audio), save=True)
+    obj = GraphemeSound(classroom=cr, grapheme=g, source="google")
+    obj.audio.save(f"{cr.pk}_{g.lower()}.mp3", ContentFile(raw), save=True)
     return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
 
 
 def word_sound(request, word):
     w = (word or "").strip().upper()[:20]
-    if not (get_kid(request) or request.user.is_staff):
+    kid = get_kid(request)
+    cr = kid.classroom if kid else _teacher_classroom(request)
+    if not cr:
         return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
-    obj = WordSound.objects.filter(word=w).first()
+    obj = WordSound.objects.filter(classroom=cr, word=w).first()
     if obj and obj.audio:
         return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
     return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
 
 
-@staff_member_required
+# -------- Teacher recording (scoped to active class) --------
+
+@login_required
 @require_POST
 def teacher_record(request):
+    cr = _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"ok": False, "error": "no class selected"}, status=400)
     grapheme = (request.POST.get("grapheme") or "").strip().upper()[:8]
     word = (request.POST.get("word") or "").strip().upper()[:20]
     f = request.FILES.get("audio")
     if not f:
         return JsonResponse({"ok": False, "error": "no audio"}, status=400)
     if grapheme:
-        obj, _ = GraphemeSound.objects.get_or_create(grapheme=grapheme)
+        cleaned, ext = audio.clean_audio(f.read(), f.name)
+        obj, _ = GraphemeSound.objects.get_or_create(classroom=cr, grapheme=grapheme)
         obj.source = "custom"
-        obj.audio.save(f.name, f, save=True)
+        obj.audio.save(f"{cr.pk}_{grapheme.lower()}.{ext}", ContentFile(cleaned), save=True)
         return JsonResponse({"ok": True, "grapheme": grapheme})
     if word:
-        obj, _ = WordSound.objects.get_or_create(word=word)
-        obj.audio.save(f.name, f, save=True)
+        cleaned, ext = audio.clean_audio(f.read(), f.name)
+        obj, _ = WordSound.objects.get_or_create(classroom=cr, word=word)
+        obj.audio.save(f"{cr.pk}_{word.lower()}.{ext}", ContentFile(cleaned), save=True)
         return JsonResponse({"ok": True, "word": word})
     return JsonResponse({"ok": False, "error": "need grapheme or word"}, status=400)
 
 
-@staff_member_required
+@login_required
 @require_POST
 def teacher_delete(request):
+    cr = _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"ok": False, "error": "no class selected"}, status=400)
     grapheme = (request.POST.get("grapheme") or "").strip().upper()[:8]
     word = (request.POST.get("word") or "").strip().upper()[:20]
     if grapheme:
-        GraphemeSound.objects.filter(grapheme=grapheme).delete()
+        GraphemeSound.objects.filter(classroom=cr, grapheme=grapheme).delete()
         return JsonResponse({"ok": True, "grapheme": grapheme})
     if word:
-        WordSound.objects.filter(word=word).delete()
+        WordSound.objects.filter(classroom=cr, word=word).delete()
         return JsonResponse({"ok": True, "word": word})
     return JsonResponse({"ok": False, "error": "need grapheme or word"}, status=400)
 
 
+# -------- Leaderboard (scoped to session class) --------
+
 def leaderboard(request):
-    kids = Kid.objects.order_by("-points_week", "name")
-    cfg = Config.get()
-    class_total = Kid.objects.aggregate(t=Sum("points_week"))["t"] or 0
-    pct = min(100, round(100 * class_total / cfg.class_goal)) if cfg.class_goal else 0
-    return render(request, "game/leaderboard.html",
-                  {"kids": kids, "class_total": class_total,
-                   "goal": cfg.class_goal, "pct": pct, "me": get_kid(request)})
+    cr = get_classroom(request)
+    if not cr:
+        return redirect("kids_root")
+    kids = cr.kids.order_by("-points_week", "name")
+    class_total = cr.kids.aggregate(t=Sum("points_week"))["t"] or 0
+    pct = min(100, round(100 * class_total / cr.class_goal)) if cr.class_goal else 0
+    return render(request, "game/leaderboard.html", {
+        "classroom": cr, "kids": kids, "class_total": class_total,
+        "goal": cr.class_goal, "pct": pct, "me": get_kid(request),
+    })
 
 
-@staff_member_required
+# -------- Teacher dashboard (scoped to active class) --------
+
+@login_required
 def dashboard(request):
+    user = request.user
+    classes = list(user.classes.order_by("name"))
+
+    # resolve active class
+    cr_id = request.session.get("classroom_id")
+    classroom = next((c for c in classes if c.pk == cr_id), None) if cr_id else None
+    if classroom is None and classes:
+        classroom = classes[0]
+        request.session["classroom_id"] = classroom.pk
+
     if request.method == "POST":
         action = request.POST.get("action")
+
+        # class management (works even with no active class yet)
+        if action == "switch_class":
+            try:
+                new_id = int(request.POST.get("class_id"))
+            except (TypeError, ValueError):
+                new_id = None
+            if any(c.pk == new_id for c in classes):
+                request.session["classroom_id"] = new_id
+            return redirect("dashboard")
+
+        if action == "add_class":
+            name = (request.POST.get("name") or "").strip()[:60]
+            if name:
+                cls = Class.objects.create(teacher=user, name=name)
+                request.session["classroom_id"] = cls.pk
+            return redirect("dashboard")
+
+        if action == "del_class":
+            try:
+                cid = int(request.POST.get("class_id"))
+            except (TypeError, ValueError):
+                return redirect("dashboard")
+            cls = user.classes.filter(pk=cid).first()
+            if cls and len(classes) > 1:  # never delete the last class
+                cls.delete()
+                if request.session.get("classroom_id") == cls.pk:
+                    request.session.pop("classroom_id", None)
+            return redirect("dashboard")
+
+        if not classroom:
+            return redirect("dashboard")
+
+        # class-scoped actions
         if action == "add_kid":
             name = (request.POST.get("name") or "").strip()[:30]
             pin = (request.POST.get("pin") or "").strip()[:4]
             icon = (request.POST.get("icon") or "🦊").strip()[:8]
             if name and pin.isdigit() and len(pin) == 4:
-                Kid.objects.get_or_create(name=name, defaults={"pin": pin, "icon": icon})
+                classroom.kids.get_or_create(name=name, defaults={"pin": pin, "icon": icon})
         elif action == "del_kid":
-            Kid.objects.filter(pk=request.POST.get("kid_id")).delete()
+            classroom.kids.filter(pk=request.POST.get("kid_id")).delete()
         elif action == "set_pin":
             pin = (request.POST.get("pin") or "").strip()[:4]
             if pin.isdigit() and len(pin) == 4:
-                Kid.objects.filter(pk=request.POST.get("kid_id")).update(pin=pin)
+                classroom.kids.filter(pk=request.POST.get("kid_id")).update(pin=pin)
         elif action == "add_words":
             for line in (request.POST.get("words") or "").splitlines():
                 line = line.strip()
@@ -219,55 +359,59 @@ def dashboard(request):
                 except ValueError:
                     level = 1
                 if text.isalpha():
-                    Word.objects.update_or_create(text=text, defaults={"level": level, "active": True})
+                    classroom.words.update_or_create(text=text, defaults={"level": level, "active": True})
         elif action == "toggle_word":
-            w = Word.objects.filter(pk=request.POST.get("word_id")).first()
+            w = classroom.words.filter(pk=request.POST.get("word_id")).first()
             if w:
                 w.active = not w.active
                 w.save()
         elif action == "del_word":
-            Word.objects.filter(pk=request.POST.get("word_id")).delete()
+            classroom.words.filter(pk=request.POST.get("word_id")).delete()
         elif action == "deactivate_all":
-            Word.objects.update(active=False)
+            classroom.words.update(active=False)
         elif action == "reset_week":
-            Kid.objects.update(points_week=0)
+            classroom.kids.update(points_week=0)
         elif action == "reset_all":
-            Kid.objects.update(points_week=0, points_total=0, streak=0, last_played=None)
-            SoundMiss.objects.all().delete()
+            classroom.kids.update(points_week=0, points_total=0, streak=0, last_played=None)
+            SoundMiss.objects.filter(kid__classroom=classroom).delete()
         elif action == "set_goal":
             try:
                 goal = max(0, int(request.POST.get("goal", "")))
             except (TypeError, ValueError):
                 goal = None
             if goal is not None:
-                cfg = Config.get()
-                cfg.class_goal = goal
-                cfg.save()
+                classroom.class_goal = goal
+                classroom.save()
         elif action == "upload_sound":
             g = (request.POST.get("grapheme") or "").strip().upper()[:8]
             f = request.FILES.get("audio")
             if g and f:
-                obj, _ = GraphemeSound.objects.get_or_create(grapheme=g)
+                cleaned, ext = audio.clean_audio(f.read(), f.name)
+                obj, _ = GraphemeSound.objects.get_or_create(classroom=classroom, grapheme=g)
                 obj.source = "custom"
-                obj.audio.save(f.name, f, save=True)
+                obj.audio.save(f"{classroom.pk}_{g.lower()}.{ext}", ContentFile(cleaned), save=True)
         elif action == "del_sound":
             GraphemeSound.objects.filter(
-                grapheme=(request.POST.get("grapheme") or "").strip().upper()
+                classroom=classroom,
+                grapheme=(request.POST.get("grapheme") or "").strip().upper(),
             ).delete()
         elif action == "del_word_sound":
             WordSound.objects.filter(
-                word=(request.POST.get("word") or "").strip().upper()
+                classroom=classroom,
+                word=(request.POST.get("word") or "").strip().upper(),
             ).delete()
         return redirect("dashboard")
 
-    trouble = (SoundMiss.objects.values("sound")
-               .annotate(total=Sum("count")).order_by("-total")[:12])
+    trouble = (SoundMiss.objects.filter(kid__classroom=classroom)
+               .values("sound").annotate(total=Sum("count")).order_by("-total")[:12]) if classroom else []
     return render(request, "game/dashboard.html", {
-        "kids": Kid.objects.order_by("name"),
-        "words": Word.objects.all(),
+        "classroom": classroom,
+        "classes": classes,
+        "kids": classroom.kids.order_by("name") if classroom else [],
+        "words": classroom.words.all() if classroom else [],
         "trouble": trouble,
-        "misses": SoundMiss.objects.select_related("kid").order_by("kid__name", "-count"),
-        "config": Config.get(),
-        "sound_rows": _sound_rows(),
-        "word_sounds": {ws.word for ws in WordSound.objects.all()},
+        "misses": (SoundMiss.objects.filter(kid__classroom=classroom)
+                   .select_related("kid").order_by("kid__name", "-count")) if classroom else [],
+        "sound_rows": _sound_rows(classroom) if classroom else [],
+        "word_sounds": {ws.word for ws in classroom.word_sounds.all()} if classroom else set(),
     })

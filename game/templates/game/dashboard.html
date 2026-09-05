@@ -18,24 +18,70 @@
   .soundchip .badge.custom { background: #dff0e3; color: #1e7a3c; }
   .soundchip .badge.google { background: #eef4fb; color: #456; }
   .soundchip .badge.none { background: #f1f3f5; color: #99a; }
+  .class-header { background: linear-gradient(135deg, #e8f4ff, #f0f7ff); border: 2px solid #c8ddf5;
+                  border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+  .class-code { font-size: 1.4rem; font-weight: 900; letter-spacing: .15em;
+                background: #fff; padding: 6px 14px; border-radius: 8px; border: 1px solid #d7e3f0; }
+  .share-link { font-size: .85rem; color: #567; word-break: break-all; }
 </style>
+
 <h1>Teacher Dashboard</h1>
-<p><a href="{% url 'admin:index' %}">Django admin</a> &middot;
-<form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button style="background:#888;">Log out</button></form></p>
+<p>
+  <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button style="background:#888;">Log out</button></form>
+</p>
+
+{% if classroom %}
+<div class="class-header">
+  <h2 style="margin:0 0 8px 0;">📋 {{ classroom.name }}</h2>
+  <p style="margin:4px 0;">
+    <strong>Kids' join code:</strong>
+    <span class="class-code">{{ classroom.code }}</span>
+  </p>
+  <p class="share-link">Shareable link:
+    <a href="{% url 'class_join' classroom.code %}">{{ request.scheme }}://{{ request.get_host }}{% url 'class_join' classroom.code %}</a>
+  </p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+    {% if classes|length > 1 %}
+    <form method="post" style="display:inline;">{% csrf_token %}
+      <input type="hidden" name="action" value="switch_class">
+      <label>Switch class:
+        <select name="class_id" onchange="this.form.submit()">
+          {% for c in classes %}
+          <option value="{{ c.pk }}" {% if c.pk == classroom.pk %}selected{% endif %}>{{ c.name }} ({{ c.code }})</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    {% endif %}
+    <form method="post" style="display:inline;">{% csrf_token %}
+      <input type="hidden" name="action" value="add_class">
+      <input name="name" placeholder="New class name" required style="width:140px;">
+      <button>Add class</button>
+    </form>
+    {% if classes|length > 1 %}
+    <form method="post" style="display:inline;"
+          onsubmit="return confirm('Delete this class and ALL its kids, words, and recordings?');">
+      {% csrf_token %}<input type="hidden" name="action" value="del_class">
+      <input type="hidden" name="class_id" value="{{ classroom.pk }}">
+      <button class="danger">Delete this class</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 
 <div class="card">
   <h2>⭐ Points</h2>
-  <form method="post" style="display:inline" onsubmit='return confirm("Reset EVERYONE\u2019s weekly points?")'>
+  <form method="post" style="display:inline" onsubmit='return confirm("Reset weekly points for this class?")'>
     {% csrf_token %}<input type="hidden" name="action" value="reset_week">
     <button class="danger">Reset weekly points</button>
   </form>
-  <form method="post" style="display:inline" onsubmit='return confirm("Wipe ALL points, streaks and progress for every kid?")'>
+  <form method="post" style="display:inline" onsubmit='return confirm("Wipe ALL points, streaks and progress for this class?")'>
     {% csrf_token %}<input type="hidden" name="action" value="reset_all">
     <button class="danger">Reset everything</button>
   </form>
   <form method="post" style="margin-top:10px;">
     {% csrf_token %}<input type="hidden" name="action" value="set_goal">
-    Class goal: <input name="goal" type="number" min="0" value="{{ config.class_goal }}" style="width:90px;">
+    Class goal: <input name="goal" type="number" min="0" value="{{ classroom.class_goal }}" style="width:90px;">
     <button>Save</button>
   </form>
 </div>
@@ -80,7 +126,7 @@
     <textarea name="words" rows="4" style="width:100%;" placeholder="One word per line. Optional level 1-3 after a comma, e.g.  FROG,2"></textarea>
     <div style="margin-top:6px;"><button>Add / update words</button></div>
   </form>
-  <form method="post" style="margin:8px 0;" onsubmit='return confirm("Deactivate every word? (Do this before pasting the new week\u2019s list.)")'>
+  <form method="post" style="margin:8px 0;" onsubmit='return confirm("Deactivate every word?")'>
     {% csrf_token %}<input type="hidden" name="action" value="deactivate_all">
     <button class="danger">New week: deactivate all</button>
   </form>
@@ -148,7 +194,7 @@
 <div class="card">
   <h2>🔍 Trouble sounds</h2>
   {% if trouble %}
-  <p>Most-missed sounds across the class:</p>
+  <p>Most-missed sounds in this class:</p>
   <table>
     <tr><th>Sound</th><th>Misses</th></tr>
     {% for t in trouble %}<tr><td>{{ t.sound }}</td><td>{{ t.total }}</td></tr>{% endfor %}
@@ -161,6 +207,18 @@
   </details>
   {% else %}<p>No data yet.</p>{% endif %}
 </div>
+
+{% else %}
+<div class="card">
+  <h2>No classes yet</h2>
+  <p>Create your first class to get started:</p>
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="add_class">
+    <input name="name" placeholder="Class name" required style="width:200px;">
+    <button>Create class</button>
+  </form>
+</div>
+{% endif %}
 
 <script>
 'use strict';

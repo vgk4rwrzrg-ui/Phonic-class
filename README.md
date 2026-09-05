@@ -43,6 +43,12 @@ upload-file form. The **Words** card has the same ▶/🎙 controls per word.
 Recording your own voice is the most accurate and licence-free option. It needs
 a microphone and HTTPS (see the deploy notes below).
 
+Every recording (and uploaded/imported file) is automatically cleaned up in the
+background: leading/trailing and gap silence is trimmed, steady background noise
+is reduced, and the loudness is normalised, then it is saved as a mono MP3. This
+uses a bundled ffmpeg binary (`imageio-ffmpeg`), so no system ffmpeg install is
+needed. The cleanup thresholds live in `game/audio.py` and are tunable.
+
 ### Importing downloaded sounds
 
 If you download sound files from a free source (see below), name each file after
