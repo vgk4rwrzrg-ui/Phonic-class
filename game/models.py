@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 import string
 
@@ -25,12 +26,30 @@ class Class(models.Model):
     class_goal = models.PositiveIntegerField(default=500)
     created = models.DateTimeField(auto_now_add=True)
 
+    # Balloon challenge settings
+    balloon_enabled = models.BooleanField(default=True)
+    balloon_frequency = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Show a balloon round every N normal rounds (0 = never).",
+    )
+
+    # Boss fight settings
+    boss_enabled = models.BooleanField(default=True)
+
     class Meta:
         verbose_name_plural = "classes"
         ordering = ["name"]
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+    def active_word_list_version(self):
+        """Stable hash of the current active word list, used to detect teacher edits."""
+        words = sorted(
+            self.words.filter(active=True).values_list("text", flat=True)
+        )
+        raw = ",".join(words)
+        return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 class Kid(models.Model):
@@ -103,3 +122,54 @@ class WordSound(models.Model):
 
     def __str__(self):
         return self.word
+
+
+class BossFight(models.Model):
+    """
+    Tracks one boss-fight instance per kid per active word-list version.
+
+    word_list_version is the sha256[:32] of the sorted active word texts at the
+    time the fight was created (or checked for eligibility).  If the teacher
+    changes the active list the hash changes, a NEW BossFight row is created,
+    and the old one is left intact so history is preserved.
+    """
+
+    kid = models.ForeignKey(Kid, on_delete=models.CASCADE, related_name="boss_fights")
+    word_list_version = models.CharField(max_length=64)
+    boss_max_hp = models.PositiveSmallIntegerField(default=1)
+    boss_hp = models.PositiveSmallIntegerField(default=1)
+    # words_spelled tracks which active words the kid has beaten in this fight
+    # stored as a comma-separated list so we don't need a M2M just for this
+    words_spelled = models.TextField(default="", blank=True)
+    completed = models.BooleanField(default=False)
+    reward_claimed = models.BooleanField(default=False)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kid", "word_list_version"],
+                name="unique_boss_per_kid_version",
+            )
+        ]
+
+    def __str__(self):
+        return f"Boss({self.kid} v{self.word_list_version[:8]} hp={self.boss_hp}/{self.boss_max_hp})"
+
+    def spelled_set(self):
+        """Return a set of already-spelled word texts for this fight."""
+        if not self.words_spelled:
+            return set()
+        return set(w for w in self.words_spelled.split(",") if w)
+
+    def add_spelled(self, word_text):
+        """Record a correctly spelled word; return True if it was new."""
+        s = self.spelled_set()
+        upper = word_text.strip().upper()
+        if upper in s:
+            return False
+        s.add(upper)
+        self.words_spelled = ",".join(sorted(s))
+        return True

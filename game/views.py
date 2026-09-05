@@ -449,3 +449,333 @@ def dashboard(request):
         "sound_rows": _sound_rows(classroom) if classroom else [],
         "word_sounds": {ws.word for ws in classroom.word_sounds.all()} if classroom else set(),
     })
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Balloon challenge & Boss fight APIs
+# ──────────────────────────────────────────────────────────────────────────────
+
+from django.db import transaction, IntegrityError
+from .models import BossFight
+
+
+# ---- Balloon ----------------------------------------------------------------
+
+@require_POST
+def api_balloon_complete(request):
+    """
+    Record a completed balloon round.  Returns the existing reward system points.
+    Idempotent: duplicate posts within the same session key are silently ignored.
+    """
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    cr = kid.classroom
+    if not cr.balloon_enabled:
+        return JsonResponse({"ok": False, "error": "balloon disabled"}, status=403)
+
+    data = _json_body(request)
+    # Client sends a nonce so we can detect double-taps / retries
+    nonce = str(data.get("nonce", ""))[:64]
+    session_key = f"balloon_nonce_{kid.pk}_{nonce}"
+    if nonce and request.session.get(session_key):
+        # Already processed this exact nonce
+        return JsonResponse({"ok": True, "duplicate": True,
+                             "points_week": kid.points_week,
+                             "points_total": kid.points_total})
+    if nonce:
+        request.session[session_key] = True
+
+    # Award fixed 5 points for a balloon round
+    pts = 5
+    kid.points_total += pts
+    kid.points_week += pts
+    today = date.today()
+    if kid.last_played != today:
+        kid.streak = kid.streak + 1 if kid.last_played == today - timedelta(days=1) else 1
+        kid.last_played = today
+    kid.save()
+    return JsonResponse({"ok": True, "points_week": kid.points_week,
+                         "points_total": kid.points_total, "streak": kid.streak})
+
+
+# ---- Boss eligibility -------------------------------------------------------
+
+def _get_or_create_boss(kid, classroom):
+    """
+    Server-side boss eligibility check.
+    Returns (fight, eligible, reason) where fight may be None.
+    A new BossFight is created (but not saved) if the kid is newly eligible.
+    """
+    if not classroom.boss_enabled:
+        return None, False, "boss_disabled"
+
+    active_words = list(classroom.words.filter(active=True).values_list("text", flat=True))
+    if not active_words:
+        return None, False, "no_words"
+
+    version = classroom.active_word_list_version()
+
+    # Look up existing fight for this version
+    fight = BossFight.objects.filter(kid=kid, word_list_version=version).first()
+    if fight:
+        return fight, True, "existing"
+
+    # Check if all active words have been completed in the normal game.
+    # We consider a word "done" if the kid has scored at least once AND the
+    # word appears in any completed boss fight's words_spelled for THIS kid,
+    # OR if the kid's total score implies they have played through the list.
+    # Real check: the game frontend tracks completion; the server validates
+    # by checking whether the client reports all words spelled (see api_boss_spell).
+    # For eligibility we trust the dedicated check endpoint only.
+    return None, False, "not_eligible"
+
+
+@require_POST
+def api_boss_eligible(request):
+    """
+    Check/confirm boss eligibility for the signed-in kid.
+    Client sends the list of words it believes the kid has completed.
+    Server validates against the active word list and creates the BossFight row.
+    """
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    cr = kid.classroom
+    if not cr.boss_enabled:
+        return JsonResponse({"ok": False, "error": "boss disabled"})
+
+    active_words = set(cr.words.filter(active=True).values_list("text", flat=True))
+    if not active_words:
+        return JsonResponse({"ok": False, "error": "no_words"})
+
+    data = _json_body(request)
+    client_spelled = {w.strip().upper() for w in data.get("words_spelled", []) if w}
+
+    version = cr.active_word_list_version()
+
+    # Check if there's already a fight for this version
+    fight = BossFight.objects.filter(kid=kid, word_list_version=version).first()
+    if fight:
+        return JsonResponse({
+            "ok": True,
+            "eligible": True,
+            "fight_id": fight.pk,
+            "boss_hp": fight.boss_hp,
+            "boss_max_hp": fight.boss_max_hp,
+            "completed": fight.completed,
+            "reward_claimed": fight.reward_claimed,
+            "words_spelled": list(fight.spelled_set()),
+            "word_list_version": version,
+        })
+
+    # Server-side validation: all active words must appear in client_spelled
+    if not active_words.issubset(client_spelled):
+        missing = active_words - client_spelled
+        return JsonResponse({
+            "ok": False,
+            "eligible": False,
+            "missing_words": list(missing)[:5],  # don't reveal all
+        })
+
+    # Create the boss fight
+    max_hp = len(active_words)
+    try:
+        with transaction.atomic():
+            fight = BossFight.objects.create(
+                kid=kid,
+                word_list_version=version,
+                boss_max_hp=max_hp,
+                boss_hp=max_hp,
+            )
+    except IntegrityError:
+        # Race: another request created it first
+        fight = BossFight.objects.get(kid=kid, word_list_version=version)
+
+    return JsonResponse({
+        "ok": True,
+        "eligible": True,
+        "fight_id": fight.pk,
+        "boss_hp": fight.boss_hp,
+        "boss_max_hp": fight.boss_max_hp,
+        "completed": fight.completed,
+        "reward_claimed": fight.reward_claimed,
+        "words_spelled": [],
+        "word_list_version": version,
+    })
+
+
+# ---- Boss spell attempt -----------------------------------------------------
+
+@require_POST
+def api_boss_spell(request):
+    """
+    Record a spelling attempt against an active boss fight.
+    Returns updated boss HP. Validates server-side; never trusts client HP.
+    """
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+
+    data = _json_body(request)
+    fight_id = data.get("fight_id")
+    word = str(data.get("word", "")).strip().upper()[:20]
+
+    try:
+        fight = BossFight.objects.select_for_update().get(
+            pk=fight_id, kid=kid
+        )
+    except BossFight.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "fight not found"}, status=404)
+
+    if fight.completed:
+        return JsonResponse({
+            "ok": True, "already_completed": True,
+            "boss_hp": 0, "boss_max_hp": fight.boss_max_hp,
+            "words_spelled": list(fight.spelled_set()),
+        })
+
+    cr = kid.classroom
+    # Validate the word is in the active list for this fight's version
+    active_words = set(cr.words.filter(active=True).values_list("text", flat=True))
+    if word not in active_words:
+        return JsonResponse({"ok": False, "error": "word not in active list"}, status=400)
+
+    with transaction.atomic():
+        fight.refresh_from_db()
+        is_new = fight.add_spelled(word)
+        damage = 0
+        if is_new:
+            # Reduce HP by 1 per new correctly spelled word
+            fight.boss_hp = max(0, fight.boss_hp - 1)
+            damage = 1
+            fight.save()
+
+    return JsonResponse({
+        "ok": True,
+        "correct": True,
+        "damage": damage,
+        "boss_hp": fight.boss_hp,
+        "boss_max_hp": fight.boss_max_hp,
+        "words_spelled": list(fight.spelled_set()),
+        "completed": fight.boss_hp == 0,
+    })
+
+
+# ---- Boss victory -----------------------------------------------------------
+
+@require_POST
+def api_boss_victory(request):
+    """
+    Claim boss victory reward. Idempotent: returns success even on duplicate.
+    Boss HP must be 0 on the server before rewards are granted.
+    """
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+
+    data = _json_body(request)
+    fight_id = data.get("fight_id")
+
+    try:
+        fight = BossFight.objects.select_for_update().get(pk=fight_id, kid=kid)
+    except BossFight.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "fight not found"}, status=404)
+
+    with transaction.atomic():
+        fight.refresh_from_db()
+        if fight.boss_hp != 0:
+            return JsonResponse({"ok": False, "error": "boss not defeated"}, status=400)
+
+        if not fight.completed:
+            fight.completed = True
+            fight.save()
+
+        if fight.reward_claimed:
+            # Idempotent — already gave reward
+            return JsonResponse({
+                "ok": True, "duplicate": True,
+                "points_week": kid.points_week,
+                "points_total": kid.points_total,
+            })
+
+        # Grant reward: 50 points for boss victory
+        pts = 50
+        fight.reward_claimed = True
+        fight.save()
+
+        kid.refresh_from_db()
+        kid.points_total += pts
+        kid.points_week += pts
+        today = date.today()
+        if kid.last_played != today:
+            kid.streak = kid.streak + 1 if kid.last_played == today - timedelta(days=1) else 1
+            kid.last_played = today
+        kid.save()
+
+    return JsonResponse({
+        "ok": True,
+        "points_awarded": pts,
+        "points_week": kid.points_week,
+        "points_total": kid.points_total,
+        "streak": kid.streak,
+    })
+
+
+# ---- Boss status (GET, for page reload recovery) ----------------------------
+
+def api_boss_status(request):
+    """Return current boss fight status for the signed-in kid."""
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    cr = kid.classroom
+    version = cr.active_word_list_version()
+    fight = BossFight.objects.filter(kid=kid, word_list_version=version).first()
+    active_words = list(cr.words.filter(active=True).values_list("text", flat=True))
+    return JsonResponse({
+        "ok": True,
+        "boss_enabled": cr.boss_enabled,
+        "balloon_enabled": cr.balloon_enabled,
+        "balloon_frequency": cr.balloon_frequency,
+        "active_words": active_words,
+        "word_list_version": version,
+        "fight": {
+            "fight_id": fight.pk,
+            "boss_hp": fight.boss_hp,
+            "boss_max_hp": fight.boss_max_hp,
+            "completed": fight.completed,
+            "reward_claimed": fight.reward_claimed,
+            "words_spelled": list(fight.spelled_set()),
+        } if fight else None,
+    })
+
+
+# ---- Teacher dashboard boss/balloon settings --------------------------------
+
+@login_required
+@require_POST
+def api_teacher_settings(request):
+    """Save balloon/boss settings from the teacher dashboard."""
+    cr = _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"success": False, "message": "No active class"}, status=400)
+    data = _json_body(request)
+    changed = []
+    if "balloon_enabled" in data:
+        cr.balloon_enabled = bool(data["balloon_enabled"])
+        changed.append("balloon_enabled")
+    if "balloon_frequency" in data:
+        try:
+            freq = max(0, min(20, int(data["balloon_frequency"])))
+            cr.balloon_frequency = freq
+            changed.append("balloon_frequency")
+        except (TypeError, ValueError):
+            return JsonResponse({"success": False, "message": "Invalid frequency"})
+    if "boss_enabled" in data:
+        cr.boss_enabled = bool(data["boss_enabled"])
+        changed.append("boss_enabled")
+    if changed:
+        cr.save(update_fields=changed)
+    return JsonResponse({"success": True, "message": "Settings saved"})
