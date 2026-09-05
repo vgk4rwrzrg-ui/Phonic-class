@@ -1,0 +1,26 @@
+{% extends "game/base.html" %}
+{% block content %}
+<h1>🏆 Leaderboard</h1>
+<div class="card">
+  <h2>Class goal</h2>
+  <div style="background:#e4edf5;border-radius:999px;height:26px;overflow:hidden;">
+    <div style="background:#3aa655;height:100%;width:{{ pct }}%;"></div>
+  </div>
+  <p><b>{{ class_total }}</b> / {{ goal }} points together this week{% if pct >= 100 %} &mdash; 🎉 GOAL REACHED!{% endif %}</p>
+</div>
+<div class="card">
+  <h2>This week</h2>
+  <table>
+    <tr><th></th><th>Player</th><th>Points</th><th>Streak</th><th>All-time</th></tr>
+    {% for kid in kids %}
+    <tr{% if me and kid.pk == me.pk %} style="background:#fdf6d8;"{% endif %}>
+      <td>{% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}</td>
+      <td>{{ kid.icon }} {{ kid.name }}</td>
+      <td><b>{{ kid.points_week }}</b></td>
+      <td>{% if kid.streak %}🔥{{ kid.streak }}{% endif %}</td>
+      <td>{{ kid.points_total }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

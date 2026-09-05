@@ -1,0 +1,262 @@
+{% extends "game/base.html" %}
+{% block title %}Play - Phonics Class{% endblock %}
+{% block content %}
+<style>
+  #boxes { display:flex; gap:14px; justify-content:center; margin:26px 0; flex-wrap:wrap; }
+  .box { width:76px; height:88px; border:3px dashed rgba(90,100,110,.6); border-radius:18px;
+         background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center;
+         transition:background .3s,border-color .3s; }
+  .box .boxletter { font-size:2.7rem; font-weight:900; color:#2eaa5e; opacity:0; transform:scale(.3); transition:all .3s; }
+  .box.filled { border:3px solid #2eaa5e; background:rgba(46,170,94,.18); }
+  .box.filled .boxletter { opacity:1; transform:scale(1); }
+  .boxletter.two { font-size:1.7rem; }
+  #tiles { display:flex; gap:18px; justify-content:center; min-height:90px; flex-wrap:wrap; }
+  .tile { width:76px; height:76px; border-radius:18px; color:#fff; font-size:2.5rem; font-weight:900;
+          display:flex; align-items:center; justify-content:center; cursor:grab;
+          box-shadow:0 4px 8px rgba(0,0,0,.22); touch-action:none; user-select:none; }
+  .tile.two { font-size:1.7rem; }
+  .tile.dragging { z-index:10; position:relative; box-shadow:0 12px 22px rgba(0,0,0,.35); cursor:grabbing; }
+  .tile.snapback { transition:transform .25s ease-out; }
+  .tile.shake { animation:shake .45s; }
+  @keyframes shake {
+    10%,90% { transform:translateX(-6px); } 20%,80% { transform:translateX(7px); }
+    30%,50%,70% { transform:translateX(-9px); } 40%,60% { transform:translateX(9px); }
+  }
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .scorepill { background:#fff; border-radius:999px; padding:8px 18px; font-size:1.3rem;
+               font-weight:800; color:#f5a623; box-shadow:0 2px 6px rgba(0,0,0,.12); }
+  .controls { display:flex; flex-direction:column; gap:14px; align-items:center; margin:18px 0; }
+  .bigbtn { background:linear-gradient(#4da3ff,#2f7fe0); color:#fff; border:none; border-radius:999px;
+            font-size:1.15rem; font-weight:800; padding:14px 30px; box-shadow:0 4px 8px rgba(0,0,0,.2); cursor:pointer; }
+  .speedwrap { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.7);
+               border-radius:14px; padding:10px 14px; }
+  .speedbtn { border:none; border-radius:10px; padding:8px 20px; font-size:1rem; font-weight:700;
+              background:#e8edf2; color:#456; cursor:pointer; }
+  .speedbtn.active { background:#4da3ff; color:#fff; }
+  #celebrate { position:fixed; inset:0; background:rgba(0,0,0,.25); display:flex; align-items:center;
+               justify-content:center; opacity:0; pointer-events:none; transition:opacity .3s; z-index:50; }
+  #celebrate.show { opacity:1; }
+  #celebrate .ccard { background:linear-gradient(#34c26b,#22995a); border-radius:30px; padding:40px 56px;
+                     text-align:center; transform:scale(.6); transition:transform .35s cubic-bezier(.2,1.6,.4,1); }
+  #celebrate.show .ccard { transform:scale(1); }
+  #celebrate .emoji { font-size:3.6rem; }
+  #celebrate .points { font-size:2.4rem; font-weight:900; color:#fff; }
+  #celebrate .cword { font-size:1.8rem; font-weight:800; color:#ffe45c; margin-top:6px; }
+  .empty { color:#556; font-size:1.1rem; text-align:center; }
+</style>
+
+<div class="topbar">
+  <div class="scorepill">&#11088; <span id="score">{{ kid.points_week }}</span></div>
+  <div style="font-weight:800;">{{ kid.icon }} {{ kid.name }}
+    {% if kid.streak %}<span title="streak">&#128293;{{ kid.streak }}</span>{% endif %}</div>
+  <div><a class="btn" href="{% url 'leaderboard' %}">&#127942;</a>
+       <a class="btn" style="background:#888;" href="{% url 'logout_kid' %}">Bye!</a></div>
+</div>
+
+<div id="boxes"></div>
+<div id="tiles"></div>
+<div class="controls">
+  <button class="bigbtn" id="hearword">&#128266; HEAR FULL WORD</button>
+  <div class="speedwrap">
+    <span>&#128034;</span>
+    <button class="speedbtn" data-rate="0.5">Slow</button>
+    <button class="speedbtn active" data-rate="1">Normal</button>
+    <span>&#128007;</span>
+  </div>
+</div>
+
+<div id="celebrate"><div class="ccard">
+  <div class="emoji">&#127881;&#11088;&#127881;</div>
+  <div class="points">+10 Points!</div>
+  <div class="cword" id="celebrateWord"></div>
+</div></div>
+
+{{ words_json|json_script:"words-data" }}
+<form style="display:none">{% csrf_token %}</form>
+
+{% verbatim %}
+<script>
+'use strict';
+var WORDS = JSON.parse(document.getElementById('words-data').textContent);
+var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+var TILE_COLORS = ['#ff9f43', '#ee5a93', '#1abcb5', '#9b59d0', '#5c6bc0', '#26c281'];
+var PRAISE = ['Great job!', 'You did it!', 'Amazing!', 'Super spelling!'];
+
+var wordIndex = 0, speechRate = 1.0, tiles = [], roundDone = false;
+(function () { // shuffle word order once per session
+  for (var i = WORDS.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = WORDS[i]; WORDS[i] = WORDS[j]; WORDS[j] = t;
+  }
+})();
+
+var LETTER_SOUNDS = { a:'ah', b:'buh', c:'kuh', d:'duh', e:'eh', f:'fff', g:'guh', h:'huh',
+  i:'ih', j:'juh', k:'kuh', l:'lll', m:'mmm', n:'nnn', o:'aw', p:'puh', q:'kwuh', r:'rrr',
+  s:'sss', t:'tuh', u:'uh', v:'vvv', w:'wuh', x:'ks', y:'yuh', z:'zzz' };
+var DIGRAPH_SOUNDS = { sh:'shh', ch:'chuh', th:'thh', ck:'kuh', ng:'ing', ee:'ee', oo:'oo', qu:'kwuh' };
+
+function wordToUnits(text) {
+  var units = [], i = 0, lower = text.toLowerCase();
+  while (i < lower.length) {
+    var two = lower.substr(i, 2);
+    if (DIGRAPH_SOUNDS[two]) { units.push({ g: two.toUpperCase(), sound: DIGRAPH_SOUNDS[two] }); i += 2; }
+    else { units.push({ g: lower[i].toUpperCase(), sound: LETTER_SOUNDS[lower[i]] || lower[i] }); i += 1; }
+  }
+  return units;
+}
+
+function api(path, data) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify(data)
+  }).then(function (r) { return r.json(); }).catch(function () { return null; });
+}
+
+function speak(text, opts) {
+  opts = opts || {};
+  if (!('speechSynthesis' in window)) return;
+  var u = new SpeechSynthesisUtterance(text);
+  u.rate = (opts.rate !== undefined) ? opts.rate : speechRate;
+  u.pitch = opts.pitch || 1.05;
+  u.lang = 'en-GB';
+  window.speechSynthesis.speak(u);
+}
+function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
+function playUnit(tile) { speak(tile.sound); }
+
+function currentWord() { return WORDS.length ? WORDS[wordIndex % WORDS.length] : null; }
+function shuffle(a) {
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+}
+
+function setupRound() {
+  roundDone = false;
+  var boxesEl = document.getElementById('boxes');
+  var tilesEl = document.getElementById('tiles');
+  boxesEl.innerHTML = ''; tilesEl.innerHTML = '';
+  var w = currentWord();
+  if (!w) { boxesEl.innerHTML = '<p class="empty">No words this week yet - ask your teacher!</p>'; return; }
+
+  var units = wordToUnits(w.text);
+  tiles = units.map(function (u, i) { return { letter: u.g, sound: u.sound, slot: i, placed: false }; });
+  do { shuffle(tiles); }
+  while (tiles.length > 1 && tiles.every(function (t, i) { return t.slot === i; }));
+
+  units.forEach(function (u, i) {
+    var b = document.createElement('div');
+    b.className = 'box'; b.dataset.slot = i;
+    var span = document.createElement('span');
+    span.className = 'boxletter' + (u.g.length > 1 ? ' two' : '');
+    span.textContent = u.g;
+    b.appendChild(span); boxesEl.appendChild(b);
+  });
+  tiles.forEach(function (t) {
+    var el = document.createElement('div');
+    el.className = 'tile' + (t.letter.length > 1 ? ' two' : '');
+    el.textContent = t.letter;
+    el.style.background = 'linear-gradient(' + TILE_COLORS[t.slot % TILE_COLORS.length] + ', ' +
+                          TILE_COLORS[t.slot % TILE_COLORS.length] + 'cc)';
+    attachTileGestures(el, t);
+    tilesEl.appendChild(el);
+  });
+}
+
+function attachTileGestures(el, tile) {
+  var startX = 0, startY = 0, dragging = false, pid = null;
+  el.addEventListener('pointerdown', function (e) {
+    if (tile.placed || roundDone) return;
+    pid = e.pointerId; el.setPointerCapture(pid);
+    startX = e.clientX; startY = e.clientY; dragging = false;
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', function (e) {
+    if (pid === null || e.pointerId !== pid) return;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!dragging && Math.hypot(dx, dy) > 10) { dragging = true; el.classList.add('dragging'); }
+    if (dragging) el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(1.15)';
+  });
+  el.addEventListener('pointerup', function (e) {
+    if (pid === null || e.pointerId !== pid) return;
+    pid = null;
+    if (!dragging) { playUnit(tile); return; }
+    el.classList.remove('dragging');
+    handleDrop(el, tile, e.clientX, e.clientY);
+  });
+  el.addEventListener('pointercancel', function () {
+    pid = null; dragging = false;
+    el.classList.remove('dragging'); el.style.transform = '';
+  });
+}
+
+function handleDrop(el, tile, x, y) {
+  var hit = null;
+  document.querySelectorAll('.box').forEach(function (b) {
+    var r = b.getBoundingClientRect();
+    if (x >= r.left - 12 && x <= r.right + 12 && y >= r.top - 12 && y <= r.bottom + 12) hit = b;
+  });
+  if (!hit) { snapBack(el, false); return; }
+  var slot = parseInt(hit.dataset.slot, 10);
+  if (slot === tile.slot && !hit.classList.contains('filled')) {
+    tile.placed = true;
+    el.style.visibility = 'hidden'; el.style.transform = '';
+    hit.classList.add('filled');
+    playUnit(tile); vibrate(20);
+    checkWin();
+  } else {
+    vibrate([30, 40, 30]);
+    api('/api/miss/', { sound: tile.letter });   // report trouble sound to teacher
+    snapBack(el, true);
+  }
+}
+
+function snapBack(el, withShake) {
+  el.classList.add('snapback');
+  el.style.transform = '';
+  setTimeout(function () {
+    el.classList.remove('snapback');
+    if (withShake) {
+      el.classList.add('shake');
+      el.addEventListener('animationend', function () { el.classList.remove('shake'); }, { once: true });
+    }
+  }, 260);
+}
+
+function checkWin() {
+  if (!tiles.every(function (t) { return t.placed; })) return;
+  roundDone = true;
+  var w = currentWord();
+  speak(w.text.toLowerCase());
+  speak(PRAISE[Math.floor(Math.random() * PRAISE.length)]);
+  api('/api/score/', { points: 10 }).then(function (res) {
+    if (res && res.ok) document.getElementById('score').textContent = res.points_week;
+  });
+  document.getElementById('celebrateWord').textContent = w.text;
+  var ov = document.getElementById('celebrate');
+  ov.classList.add('show');
+  setTimeout(function () {
+    ov.classList.remove('show');
+    wordIndex++;
+    setupRound();
+  }, 2300);
+}
+
+document.getElementById('hearword').addEventListener('click', function () {
+  var w = currentWord();
+  if (w) speak(w.text.toLowerCase());
+});
+document.querySelectorAll('.speedbtn').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.querySelectorAll('.speedbtn').forEach(function (x) { x.classList.remove('active'); });
+    b.classList.add('active');
+    speechRate = parseFloat(b.dataset.rate);
+  });
+});
+
+setupRound();
+</script>
+{% endverbatim %}
+{% endblock %}

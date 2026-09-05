@@ -1,0 +1,19 @@
+{% extends "game/base.html" %}
+{% block content %}
+<h1>Who's playing?</h1>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% if not kids %}<div class="card">No players yet &mdash; ask your teacher to add you!</div>{% endif %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;">
+{% for kid in kids %}
+  <form method="post" class="card" style="text-align:center;">
+    {% csrf_token %}
+    <input type="hidden" name="kid_id" value="{{ kid.pk }}">
+    <div style="font-size:2.4em;">{{ kid.icon }}</div>
+    <div style="font-weight:700;margin:6px 0;">{{ kid.name }}</div>
+    <input name="pin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN"
+           style="width:80px;text-align:center;" required>
+    <div style="margin-top:8px;"><button>Go!</button></div>
+  </form>
+{% endfor %}
+</div>
+{% endblock %}

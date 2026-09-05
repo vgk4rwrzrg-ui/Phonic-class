@@ -1,0 +1,108 @@
+{% extends "game/base.html" %}
+{% block content %}
+<h1>Teacher Dashboard</h1>
+<p><a href="{% url 'admin:index' %}">Django admin</a> &middot;
+<form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button style="background:#888;">Log out</button></form></p>
+
+<div class="card">
+  <h2>⭐ Points</h2>
+  <form method="post" style="display:inline" onsubmit='return confirm("Reset EVERYONE\u2019s weekly points?")'>
+    {% csrf_token %}<input type="hidden" name="action" value="reset_week">
+    <button class="danger">Reset weekly points</button>
+  </form>
+  <form method="post" style="display:inline" onsubmit='return confirm("Wipe ALL points, streaks and progress for every kid?")'>
+    {% csrf_token %}<input type="hidden" name="action" value="reset_all">
+    <button class="danger">Reset everything</button>
+  </form>
+  <form method="post" style="margin-top:10px;">
+    {% csrf_token %}<input type="hidden" name="action" value="set_goal">
+    Class goal: <input name="goal" type="number" min="0" value="{{ config.class_goal }}" style="width:90px;">
+    <button>Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>🧒 Kids</h2>
+  <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% csrf_token %}<input type="hidden" name="action" value="add_kid">
+    <input name="name" placeholder="Name" required>
+    <input name="icon" placeholder="🦊" style="width:60px;">
+    <input name="pin" placeholder="4-digit PIN" pattern="[0-9]{4}" maxlength="4" required style="width:110px;">
+    <button>Add kid</button>
+  </form>
+  <table>
+    <tr><th>Kid</th><th>Week</th><th>Total</th><th>Streak</th><th>PIN</th><th></th></tr>
+    {% for kid in kids %}
+    <tr>
+      <td>{{ kid.icon }} {{ kid.name }}</td>
+      <td>{{ kid.points_week }}</td><td>{{ kid.points_total }}</td><td>{{ kid.streak }}</td>
+      <td>
+        <form method="post" style="display:flex;gap:4px;">{% csrf_token %}
+          <input type="hidden" name="action" value="set_pin"><input type="hidden" name="kid_id" value="{{ kid.pk }}">
+          <input name="pin" value="{{ kid.pin }}" maxlength="4" pattern="[0-9]{4}" style="width:64px;">
+          <button>Set</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" onsubmit='return confirm("Delete {{ kid.name }}?")'>{% csrf_token %}
+          <input type="hidden" name="action" value="del_kid"><input type="hidden" name="kid_id" value="{{ kid.pk }}">
+          <button class="danger">&#10005;</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>📚 Words (this week)</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="add_words">
+    <textarea name="words" rows="4" style="width:100%;" placeholder="One word per line. Optional level 1-3 after a comma, e.g.  FROG,2"></textarea>
+    <div style="margin-top:6px;"><button>Add / update words</button></div>
+  </form>
+  <form method="post" style="margin:8px 0;" onsubmit='return confirm("Deactivate every word? (Do this before pasting the new week\u2019s list.)")'>
+    {% csrf_token %}<input type="hidden" name="action" value="deactivate_all">
+    <button class="danger">New week: deactivate all</button>
+  </form>
+  <table>
+    <tr><th>Word</th><th>Level</th><th>Active</th><th></th></tr>
+    {% for w in words %}
+    <tr>
+      <td>{{ w.text }}</td><td>{{ w.level }}</td>
+      <td>
+        <form method="post">{% csrf_token %}
+          <input type="hidden" name="action" value="toggle_word">
+          <input type="hidden" name="word_id" value="{{ w.pk }}">
+          <button style="background:{% if w.active %}#3aa655{% else %}#999{% endif %};">{% if w.active %}On{% else %}Off{% endif %}</button>
+        </form>
+      </td>
+      <td>
+        <form method="post">{% csrf_token %}
+          <input type="hidden" name="action" value="del_word">
+          <input type="hidden" name="word_id" value="{{ w.pk }}">
+          <button class="danger">&#10005;</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>🔍 Trouble sounds</h2>
+  {% if trouble %}
+  <p>Most-missed sounds across the class:</p>
+  <table>
+    <tr><th>Sound</th><th>Misses</th></tr>
+    {% for t in trouble %}<tr><td>{{ t.sound }}</td><td>{{ t.total }}</td></tr>{% endfor %}
+  </table>
+  <details style="margin-top:8px;"><summary>Per kid</summary>
+    <table>
+      <tr><th>Kid</th><th>Sound</th><th>Misses</th></tr>
+      {% for m in misses %}<tr><td>{{ m.kid.name }}</td><td>{{ m.sound }}</td><td>{{ m.count }}</td></tr>{% endfor %}
+    </table>
+  </details>
+  {% else %}<p>No data yet.</p>{% endif %}
+</div>
+{% endblock %}
