@@ -32,7 +32,7 @@ DIGRAPHS = {
 }
 TRIGRAPHS = {"igh", "tch", "dge", "ear", "air"}
 
-VOICE_NAME = os.environ.get("GOOGLE_TTS_VOICE", "en-US-Neural2-C")
+VOICE_NAME = os.environ.get("GOOGLE_TTS_VOICE", "en-US-Neural2-F")
 
 
 def split_graphemes(text):
