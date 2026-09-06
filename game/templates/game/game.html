@@ -288,6 +288,27 @@ function speak(text, opts) {
 }
 function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
 
+// Spoken phrases: play the pre-generated Google TTS file when available,
+// falling back to browser speechSynthesis. Slug matches game/phrases.py.
+function phraseSlug(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+var phrasePool = {};
+function sayPhrase(text) {
+  var slug = phraseSlug(text);
+  var a = phrasePool[slug];
+  if (!a) {
+    a = new Audio('/phrase/' + slug + '/');
+    a.preload = 'auto';
+    phrasePool[slug] = a;
+  }
+  try { a.currentTime = 0; } catch (e) {}
+  var fallback = function () { speak(text, { cancel: true }); };
+  a.onerror = fallback;
+  var p = a.play();
+  if (p && p.catch) p.catch(fallback);
+}
+
 // Letter sounds come from /sound/<grapheme>/ (custom file if uploaded,
 // otherwise Google TTS). Pool one <audio> per grapheme and preload per round.
 var audioPool = {}, currentAudio = null;
@@ -492,7 +513,7 @@ function showHint() {
   el.classList.remove('show');
   void el.offsetWidth;
   el.classList.add('show');
-  speak(msg, { cancel: true });
+  sayPhrase(msg);
   setTimeout(function () { el.classList.remove('show'); }, 1800);
 }
 
@@ -504,7 +525,7 @@ function checkWin() {
   document.getElementById('celebrateEmoji').textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
   document.getElementById('celebrateMsg').textContent = praise;
   document.getElementById('celebrateWord').textContent = w.text;
-  playWord(w, function () { speak(praise); });
+  playWord(w, function () { sayPhrase(praise); });
   api('/api/score/', { points: 10 }).then(function (res) {
     if (res && res.ok) document.getElementById('score').textContent = res.points_week;
   });
@@ -636,7 +657,7 @@ function startBalloonRound() {
   stage.innerHTML = '';
   var order = seq.slice(); shuffle(order);
   order.forEach(function (g, i) { spawnBalloon(g, i, count); });
-  speak('Pop the balloons in order!', { cancel: true });
+  sayPhrase('Pop the balloons in order!');
   balloonLoop();
   return true;
 }
@@ -715,7 +736,7 @@ function popAttempt(b) {
     b.el.addEventListener('animationend', function () { b.el.classList.remove('wiggle'); }, { once: true });
     var msg = document.getElementById('balloonMsg');
     msg.textContent = 'Not that one \u2014 find ' + expected + '!';
-    speak('Try the ' + expected.toLowerCase() + ' balloon!', { cancel: true });
+    sayPhrase('Try the ' + expected.toLowerCase() + ' balloon!');
     setTimeout(function () { msg.textContent = ''; }, 1800);
   }
 }
@@ -784,7 +805,7 @@ function openBoss(res) {
   updateBossHp();
   updateBossRecovered();
   if (bossState.hp === 0) { bossVictory(); return; }
-  speak('Baron Blot has stolen the letters! Spell the words to win them back!', { cancel: true });
+  sayPhrase('Baron Blot has stolen the letters! Spell the words to win them back!');
   nextBossWord();
 }
 
@@ -852,7 +873,7 @@ function bossTileTap(btn, o) {
     btn.addEventListener('animationend', function () { btn.classList.remove('shake'); }, { once: true });
     var msg = document.getElementById('bossMsg');
     msg.textContent = 'Baron Blot giggles \u2014 but you can try again!';
-    speak('Try again \u2014 listen to the word!', { cancel: true });
+    sayPhrase('Try again \u2014 listen to the word!');
     setTimeout(function () { msg.textContent = ''; }, 2000);
   }
 }
@@ -876,7 +897,7 @@ function bossWordComplete() {
     art.classList.remove('hit'); void art.offsetWidth; art.classList.add('hit');
     updateBossHp();
     updateBossRecovered();
-    speak('Take that, Baron Blot!', { cancel: true });
+    sayPhrase('Take that, Baron Blot!');
     if (res.completed || bossState.hp === 0) {
       setTimeout(bossVictory, 700);
     } else if (bossState.queue.length) {
@@ -912,7 +933,7 @@ function bossVictory() {
   bossState.spelled.forEach(function (w) { letters.push(w); });
   document.getElementById('victoryLetters').textContent = letters.join(' \u2B50 ');
   confettiBurst();
-  speak('You beat Baron Blot! The letters are safe!', { cancel: true });
+  sayPhrase('You beat Baron Blot! The letters are safe!');
   if (victoryRequested) return;
   victoryRequested = true;
   api('/api/boss/victory/', { fight_id: bossState.fightId }).then(function (res) {

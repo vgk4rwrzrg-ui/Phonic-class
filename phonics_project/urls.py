@@ -33,6 +33,7 @@ urlpatterns = [
     # Sound endpoints
     path("sound/<str:grapheme>/", views.sound, name="sound"),
     path("wordsound/<str:word>/", views.word_sound, name="word_sound"),
+    path("phrase/<slug:slug>/", views.phrase_sound, name="phrase_sound"),
 
     # Teacher
     path("teacher/", views.dashboard, name="dashboard"),
@@ -40,6 +41,7 @@ urlpatterns = [
     path("teacher/delete/", views.teacher_delete, name="teacher_delete"),
     path("teacher/settings/", views.api_teacher_settings, name="api_teacher_settings"),
     path("teacher/googleword/", views.teacher_google_word, name="teacher_google_word"),
+    path("teacher/audio.zip", views.teacher_audio_zip, name="teacher_audio_zip"),
     path("teacher/login/",
          auth_views.LoginView.as_view(template_name="game/teacher_login.html"),
          name="login"),
