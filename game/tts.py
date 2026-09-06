@@ -53,16 +53,8 @@ def split_graphemes(text):
     return units
 
 
-def synthesize(grapheme):
-    """Return MP3 audio bytes for a single grapheme via Google Cloud TTS."""
+def _synth_ssml(ssml):
     from google.cloud import texttospeech
-
-    g = (grapheme or "").strip().upper()
-    ipa = GRAPHEME_IPA.get(g)
-    if ipa:
-        ssml = f'<speak><phoneme alphabet="ipa" ph="{ipa}">{g}</phoneme></speak>'
-    else:
-        ssml = f"<speak>{g.lower()}</speak>"
 
     client = texttospeech.TextToSpeechClient()
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml)
@@ -74,6 +66,31 @@ def synthesize(grapheme):
         input=synthesis_input, voice=voice, audio_config=audio_config
     )
     return response.audio_content
+
+
+def synthesize(grapheme):
+    """Return MP3 audio bytes for a single grapheme via Google Cloud TTS.
+
+    Continuants use a length mark (e.g. "sː" -> "sss").  Some voices reject
+    length marks on consonants with INVALID_ARGUMENT; if that happens we
+    retry with a slowed-down plain phoneme so the sound still generates.
+    """
+    g = (grapheme or "").strip().upper()
+    ipa = GRAPHEME_IPA.get(g)
+    if not ipa:
+        return _synth_ssml(f"<speak>{g.lower()}</speak>")
+    try:
+        return _synth_ssml(
+            f'<speak><phoneme alphabet="ipa" ph="{ipa}">{g}</phoneme></speak>')
+    except Exception:
+        if "\u02d0" not in ipa.encode("unicode_escape").decode():
+            raise
+        # Retry: strip the length mark, stretch with prosody instead.
+        plain = ipa.replace("\u02d0", "").replace("ː", "")
+        return _synth_ssml(
+            f'<speak><prosody rate="60%">'
+            f'<phoneme alphabet="ipa" ph="{plain}">{g}</phoneme>'
+            f"</prosody></speak>")
 
 
 def synthesize_word(word):

@@ -35,6 +35,18 @@ def _post(client, url, data=None):
 
 
 def _png_bytes(size=(300, 300)):
+    """A non-flat test image (real generations are never one solid color)."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", size, (200, 150, 255))
+    d = ImageDraw.Draw(im)
+    d.ellipse([30, 30, size[0] - 30, size[1] - 30], fill=(40, 90, 200))
+    d.rectangle([10, 10, 80, 80], fill=(250, 220, 60))
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _flat_png_bytes(size=(300, 300)):
     from PIL import Image
     buf = io.BytesIO()
     Image.new("RGB", size, (200, 150, 255)).save(buf, "PNG")
@@ -137,6 +149,17 @@ class HatchTests(TestCase):
         path = _os.path.join(settings.MEDIA_ROOT, pet.image_path)
         self.assertTrue(_os.path.exists(path))
         self.assertEqual(Image.open(path).size, (512, 512))
+
+    def test_hatch_rejects_flat_image(self):
+        """A solid-color result means generation failed - keep the egg."""
+        _, cr, kid = _setup()
+        pet = self._egg(kid)
+        _login(self.client, kid)
+        with patch("game.views._deepai_generate", return_value=_flat_png_bytes()):
+            resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
+        self.assertEqual(resp.status_code, 502)
+        pet.refresh_from_db()
+        self.assertFalse(pet.hatched)
 
     def test_hatch_idempotent(self):
         _, cr, kid = _setup()
