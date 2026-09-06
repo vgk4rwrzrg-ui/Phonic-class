@@ -1,4 +1,5 @@
 import json
+import logging
 import mimetypes
 import os
 from datetime import date, timedelta
@@ -14,6 +15,8 @@ from django.views.decorators.http import require_POST
 from . import audio, tts
 from .forms import TeacherSignupForm
 from .models import Class, GraphemeSound, Kid, Pet, SoundMiss, Word, WordSound
+
+logger = logging.getLogger(__name__)
 
 mimetypes.add_type("audio/mpeg", ".mp3")
 mimetypes.add_type("audio/wav", ".wav")
@@ -233,6 +236,7 @@ def sound(request, grapheme):
     try:
         raw = tts.synthesize(g)
     except Exception as exc:  # no credentials / network / quota
+        logger.exception("Letter sound synthesis failed for %s", g)
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
     obj = GraphemeSound(classroom=None, grapheme=g, source="google")
     obj.audio.save(f"shared_{g.lower()}.mp3", ContentFile(raw), save=True)
@@ -256,6 +260,7 @@ def word_sound(request, word):
     try:
         raw = tts.synthesize_word(w)
     except Exception:  # no credentials / network / quota -> browser TTS fallback
+        logger.exception("Word sound synthesis failed for %s", w.text)
         return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
     obj = obj or WordSound(classroom=cr, word=w)
     obj.source = "google"
@@ -850,6 +855,7 @@ def phrase_sound(request, slug):
         try:
             raw = tts.synthesize_phrase(text)
         except Exception:  # no credentials -> browser TTS fallback
+            logger.exception("Phrase synthesis failed for %s", slug)
             return JsonResponse({"ok": False, "error": "tts unavailable"}, status=404)
         os.makedirs(pdir, exist_ok=True)
         with open(path, "wb") as fh:
@@ -1090,17 +1096,21 @@ def api_pet_hatch(request, pet_id):
         raw = _deepai_generate(pet.prompt)
     except RuntimeError as e:
         if str(e) == "no_api_key":
+            logger.error("Pet hatch failed (pet %s): DEEPAI_API_KEY is not set", pet.pk)
             return JsonResponse(
                 {"ok": False, "error":
                  "Image maker is not set up yet - ask your teacher!"}, status=503)
+        logger.exception("Pet hatch failed (pet %s)", pet.pk)
         return JsonResponse({"ok": False, "error":
                              "The egg is not ready - try again soon!"}, status=502)
     except Exception:
+        logger.exception("Pet hatch failed (pet %s)", pet.pk)
         return JsonResponse({"ok": False, "error":
                              "The egg is not ready - try again soon!"}, status=502)
 
     if _looks_blank(raw):
         # Flat single-color output means generation failed; keep the egg.
+        logger.error("Pet hatch (pet %s): DeepAI returned a blank/flat image", pet.pk)
         return JsonResponse({"ok": False, "error":
                              "The egg is not ready - try again soon!"}, status=502)
 
@@ -1172,6 +1182,7 @@ def pet_sound(request, pet_id, idx):
                 phrases[idx], voice["language_code"], voice["voice_name"],
                 voice["pitch"], voice["rate"])
         except Exception:
+            logger.exception("Pet voice synthesis failed (pet %s)", pet.pk)
             return JsonResponse({"error": "tts unavailable"}, status=404)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
