@@ -64,8 +64,7 @@
       <button>Add class</button>
     </form>
     {% if classes|length > 1 %}
-    <form method="post" style="display:inline;"
-          onsubmit="return confirm('Delete this class and ALL its kids, words, and recordings?');">
+    <form method="post" style="display:inline;">
       {% csrf_token %}<input type="hidden" name="action" value="del_class">
       <input type="hidden" name="class_id" value="{{ classroom.pk }}">
       <button class="danger">Delete this class</button>
@@ -76,11 +75,11 @@
 
 <div class="card">
   <h2>⭐ Points</h2>
-  <form method="post" style="display:inline" onsubmit='return confirm("Reset weekly points for this class?")'>
+  <form method="post" style="display:inline">
     {% csrf_token %}<input type="hidden" name="action" value="reset_week">
     <button class="danger">Reset weekly points</button>
   </form>
-  <form method="post" style="display:inline" onsubmit='return confirm("Wipe ALL points, streaks and progress for this class?")'>
+  <form method="post" style="display:inline">
     {% csrf_token %}<input type="hidden" name="action" value="reset_all">
     <button class="danger">Reset everything</button>
   </form>
@@ -114,7 +113,7 @@
         </form>
       </td>
       <td>
-        <form method="post" onsubmit='return confirm("Delete {{ kid.name }}?")'>{% csrf_token %}
+        <form method="post">{% csrf_token %}
           <input type="hidden" name="action" value="del_kid"><input type="hidden" name="kid_id" value="{{ kid.pk }}">
           <button class="danger">&#10005;</button>
         </form>
@@ -131,7 +130,7 @@
     <textarea name="words" rows="4" style="width:100%;" placeholder="One word per line. Optional level 1-3 after a comma, e.g.  FROG,2"></textarea>
     <div style="margin-top:6px;"><button>Add / update words</button></div>
   </form>
-  <form method="post" style="margin:8px 0;" onsubmit='return confirm("Deactivate every word?")'>
+  <form method="post" style="margin:8px 0;">
     {% csrf_token %}<input type="hidden" name="action" value="deactivate_all">
     <button class="danger">New week: deactivate all</button>
   </form>
@@ -157,7 +156,7 @@
         </div>
       </td>
       <td>
-        <form method="post" onsubmit='return confirm("Delete word {{ w.text }}?")'>{% csrf_token %}
+        <form method="post">{% csrf_token %}
           <input type="hidden" name="action" value="del_word">
           <input type="hidden" name="word_id" value="{{ w.pk }}">
           <button class="danger">🗑</button>
@@ -289,7 +288,8 @@ function showToast(message, type) {
 function handleFormSubmit(form, options) {
   options = options || {};
   var formData = new FormData(form);
-  var url = form.action || window.location.href;
+  // NB: form.action is clobbered by <input name="action">, so read the attribute
+  var url = form.getAttribute('action') || window.location.href;
   
   return fetch(url, {
     method: 'POST',
@@ -314,8 +314,10 @@ function handleFormSubmit(form, options) {
 
 // Intercept all dashboard forms and convert to AJAX
 document.querySelectorAll('form[method="post"]').forEach(function(form) {
-  // Skip logout form
-  if (form.action && form.action.indexOf('/logout/') !== -1) return;
+  // Skip logout form (use getAttribute: form.action is clobbered by
+  // the hidden <input name="action"> in every dashboard form)
+  var actionAttr = form.getAttribute('action') || '';
+  if (actionAttr.indexOf('/logout/') !== -1) return;
   
   form.addEventListener('submit', function(e) {
     e.preventDefault();
@@ -327,7 +329,7 @@ document.querySelectorAll('form[method="post"]').forEach(function(form) {
     // Class management - reload page
     if (['switch_class', 'add_class'].indexOf(action) !== -1) {
       handleFormSubmit(form, {
-        onSuccess: function() { window.location.reload(); }
+        onSuccess: function() { setTimeout(function() { window.location.reload(); }, 900); }
       });
       return;
     }
@@ -335,7 +337,7 @@ document.querySelectorAll('form[method="post"]').forEach(function(form) {
     if (action === 'del_class') {
       if (confirm('Delete this class and ALL its kids, words, and recordings?')) {
         handleFormSubmit(form, {
-          onSuccess: function() { window.location.reload(); }
+          onSuccess: function() { setTimeout(function() { window.location.reload(); }, 900); }
         });
       }
       return;
@@ -358,7 +360,7 @@ document.querySelectorAll('form[method="post"]').forEach(function(form) {
     if (action === 'reset_all') {
       if (confirm('Wipe ALL points, streaks and progress for this class?')) {
         handleFormSubmit(form, {
-          onSuccess: function() { window.location.reload(); }
+          onSuccess: function() { setTimeout(function() { window.location.reload(); }, 900); }
         });
       }
       return;
@@ -366,35 +368,16 @@ document.querySelectorAll('form[method="post"]').forEach(function(form) {
     
     // Goal update
     if (action === 'set_goal') {
-      handleFormSubmit(form, {
-        onSuccess: function(data) {
-          showToast('Goal updated to ' + data.goal, 'success');
-        }
-      });
+      handleFormSubmit(form);
       return;
     }
     
     // Add kid
     if (action === 'add_kid') {
       handleFormSubmit(form, {
-        onSuccess: function(data) {
-          var tbody = form.closest('table').querySelector('tbody');
-          var row = tbody.insertRow(-1);
-          row.innerHTML = '<td>' + data.icon + ' ' + data.name + '</td>' +
-                         '<td>0</td><td>0</td><td>0</td>' +
-                         '<td><form method="post" style="display:flex;gap:4px;">' +
-                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
-                         '<input type="hidden" name="action" value="set_pin">' +
-                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
-                         '<input name="pin" value="' + data.pin + '" maxlength="4" pattern="[0-9]{4}" style="width:64px;">' +
-                         '<button>Set</button></form></td>' +
-                         '<td><form method="post">' +
-                         '<input type="hidden" name="csrfmiddlewaretoken" value="' + CSRF + '">' +
-                         '<input type="hidden" name="action" value="del_kid">' +
-                         '<input type="hidden" name="kid_id" value="' + data.id + '">' +
-                         '<button class="danger">&#10005;</button></form></td>';
+        onSuccess: function() {
           form.reset();
-          row.querySelectorAll('form').forEach(attachFormHandler);
+          setTimeout(function() { window.location.reload(); }, 1200);
         }
       });
       return;
@@ -422,9 +405,9 @@ document.querySelectorAll('form[method="post"]').forEach(function(form) {
     // Add words
     if (action === 'add_words') {
       handleFormSubmit(form, {
-        onSuccess: function(data) {
-          showToast('Added ' + data.count + ' words', 'success');
+        onSuccess: function() {
           form.reset();
+          setTimeout(function() { window.location.reload(); }, 1200);
         }
       });
       return;
