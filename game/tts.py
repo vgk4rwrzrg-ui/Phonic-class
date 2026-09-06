@@ -11,12 +11,12 @@ import os
 
 # Grapheme -> IPA phoneme (alphabet="ipa", en-US).
 GRAPHEME_IPA = {
-    "A": "æ", "B": "bə", "C": "kə", "D": "də", "E": "ɛ", "F": "f", "G": "ɡə",
-    "H": "h", "I": "ɪ", "J": "ʤə", "K": "kə", "L": "l", "M": "m", "N": "n",
-    "O": "ɑː", "P": "pə", "Q": "kwə", "R": "ɹ", "S": "s", "T": "tə", "U": "ʌ",
-    "V": "v", "W": "wə", "X": "ks", "Y": "jə", "Z": "z",
-    "SH": "ʃ", "CH": "ʧə", "TH": "θ", "CK": "kə", "NG": "ŋ", "QU": "kwə",
-    "WH": "wə", "PH": "f",
+    "A": "æ", "B": "bə", "C": "kə", "D": "də", "E": "ɛ", "F": "fː", "G": "ɡə",
+    "H": "hə", "I": "ɪ", "J": "ʤə", "K": "kə", "L": "lː", "M": "mː", "N": "nː",
+    "O": "ɑː", "P": "pə", "Q": "kwə", "R": "ɹː", "S": "sː", "T": "tə", "U": "ʌ",
+    "V": "vː", "W": "wə", "X": "ks", "Y": "jə", "Z": "zː",
+    "SH": "ʃː", "CH": "ʧə", "TH": "θː", "CK": "kə", "NG": "ŋː", "QU": "kwə",
+    "WH": "wə", "PH": "fː",
     "EE": "iː", "OO": "uː", "AI": "eɪ", "AY": "eɪ", "EA": "iː", "OA": "oʊ",
     "IE": "aɪ", "OI": "ɔɪ", "OY": "ɔɪ", "OU": "aʊ", "OW": "aʊ",
     "AU": "ɔː", "AW": "ɔː", "AR": "ɑːɹ", "ER": "ɚ", "IR": "ɚ", "UR": "ɚ",
@@ -69,6 +69,24 @@ def synthesize(grapheme):
     voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=VOICE_NAME)
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.MP3
+    )
+    response = client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+    return response.audio_content
+
+
+def synthesize_word(word):
+    """Return MP3 audio bytes for a whole word via Google Cloud TTS."""
+    from google.cloud import texttospeech
+
+    w = (word or "").strip().lower()
+    client = texttospeech.TextToSpeechClient()
+    synthesis_input = texttospeech.SynthesisInput(text=w)
+    voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=VOICE_NAME)
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=0.85,   # a touch slower for young learners
     )
     response = client.synthesize_speech(
         input=synthesis_input, voice=voice, audio_config=audio_config

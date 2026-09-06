@@ -29,17 +29,21 @@ def _content_type(name):
 
 def _sound_rows(classroom):
     sound_map = {s.grapheme: s for s in classroom.grapheme_sounds.all()}
+    shared = set(GraphemeSound.objects.filter(classroom__isnull=True)
+                 .values_list("grapheme", flat=True))
     rows = []
     for g in sorted(tts.GRAPHEME_IPA):
         s = sound_map.get(g)
         if s and s.source == "custom":
             label, css = "🎙 Custom", "custom"
-        elif s:
+        elif (s and s.source == "google") or g in shared:
+            s = s or True
             label, css = "🤖 Google", "google"
         else:
             label, css = "—", "none"
         rows.append({"grapheme": g, "has": bool(s),
-                     "source": s.source if s else None,
+                     "source": (s.source if hasattr(s, "source") else
+                                ("google" if s else None)),
                      "label": label, "css": css})
     return rows
 
@@ -211,15 +215,19 @@ def sound(request, grapheme):
     cr = kid.classroom if kid else _teacher_classroom(request)
     if not cr:
         return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
-    obj = GraphemeSound.objects.filter(classroom=cr, grapheme=g).first()
+    # Teacher recording for this class wins; otherwise use the shared
+    # Google sound (classroom=None) so every classroom hears the same voice.
+    obj = GraphemeSound.objects.filter(classroom=cr, grapheme=g, source="custom").first()
+    if not obj:
+        obj = GraphemeSound.objects.filter(classroom__isnull=True, grapheme=g).first()
     if obj and obj.audio:
         return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
     try:
         raw = tts.synthesize(g)
     except Exception as exc:  # no credentials / network / quota
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
-    obj = GraphemeSound(classroom=cr, grapheme=g, source="google")
-    obj.audio.save(f"{cr.pk}_{g.lower()}.mp3", ContentFile(raw), save=True)
+    obj = GraphemeSound(classroom=None, grapheme=g, source="google")
+    obj.audio.save(f"shared_{g.lower()}.mp3", ContentFile(raw), save=True)
     return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
 
 
@@ -232,7 +240,19 @@ def word_sound(request, word):
     obj = WordSound.objects.filter(classroom=cr, word=w).first()
     if obj and obj.audio:
         return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
-    return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    # No recording: fall back to Google TTS for whole words (same as graphemes).
+    # Only synthesize words that belong to this class, so kids can't spend the
+    # teacher's TTS quota on arbitrary text.
+    if not cr.words.filter(text=w).exists():
+        return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    try:
+        raw = tts.synthesize_word(w)
+    except Exception:  # no credentials / network / quota -> browser TTS fallback
+        return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    obj = obj or WordSound(classroom=cr, word=w)
+    obj.source = "google"
+    obj.audio.save(f"{cr.pk}_{w.lower()}.mp3", ContentFile(raw), save=True)
+    return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
 
 
 # -------- Teacher recording (scoped to active class) --------
@@ -257,6 +277,7 @@ def teacher_record(request):
     if word:
         cleaned, ext = audio.clean_audio(f.read(), f.name)
         obj, _ = WordSound.objects.get_or_create(classroom=cr, word=word)
+        obj.source = "custom"
         obj.audio.save(f"{cr.pk}_{word.lower()}.{ext}", ContentFile(cleaned), save=True)
         return JsonResponse({"ok": True, "word": word})
     return JsonResponse({"ok": False, "error": "need grapheme or word"}, status=400)
@@ -769,6 +790,31 @@ def api_boss_status(request):
             "words_spelled": list(fight.spelled_set()),
         } if fight else None,
     })
+
+
+@login_required
+@require_POST
+def teacher_google_word(request):
+    """Generate (or regenerate) Google TTS audio for one of this class's words."""
+    cr = _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"success": False, "message": "No active class"}, status=400)
+    word = (request.POST.get("word") or "").strip().upper()[:20]
+    if not word or not cr.words.filter(text=word).exists():
+        return JsonResponse({"success": False, "message": "Word not found"}, status=404)
+    existing = WordSound.objects.filter(classroom=cr, word=word).first()
+    if existing and existing.source == "custom":
+        return JsonResponse({"success": False,
+                             "message": f"{word} has a custom recording — delete it first"})
+    try:
+        raw = tts.synthesize_word(word)
+    except Exception:
+        return JsonResponse({"success": False,
+                             "message": "Google TTS unavailable — check credentials"}, status=503)
+    obj = existing or WordSound(classroom=cr, word=word)
+    obj.source = "google"
+    obj.audio.save(f"{cr.pk}_{word.lower()}.mp3", ContentFile(raw), save=True)
+    return JsonResponse({"success": True, "message": f"Google audio ready for {word}"})
 
 
 # ---- Teacher dashboard boss/balloon settings --------------------------------

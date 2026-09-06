@@ -2,11 +2,11 @@ from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 
 from game import tts
-from game.models import Class, GraphemeSound, Word
+from game.models import Class, GraphemeSound, Word, WordSound
 
 
 class Command(BaseCommand):
-    help = "Pre-generate letter sounds with Google Cloud TTS for a class (custom uploads are kept)."
+    help = "Pre-generate letter AND word sounds with Google Cloud TTS for a class (custom uploads are kept)."
 
     def add_arguments(self, parser):
         parser.add_argument("--class", dest="code", help="Class code. Defaults to first class.")
@@ -16,17 +16,11 @@ class Command(BaseCommand):
             help="Regenerate Google sounds that already exist.",
         )
 
-    def _generate_for(self, classroom, opts):
-        self.stdout.write(f"Generating sounds for {classroom.name} ({classroom.code})...")
-        graphemes = set(tts.GRAPHEME_IPA)
-        for word in classroom.words.filter(active=True):
-            graphemes.update(tts.split_graphemes(word.text))
-
+    def _generate_shared_graphemes(self, graphemes, opts):
+        """Google letter sounds are shared by every classroom (classroom=None)."""
         for g in sorted(graphemes):
-            existing = classroom.grapheme_sounds.filter(grapheme=g).first()
-            if existing and existing.source == "custom":
-                self.stdout.write(f"keeping custom  {g}")
-                continue
+            existing = GraphemeSound.objects.filter(
+                classroom__isnull=True, grapheme=g).first()
             if existing and not opts["force"]:
                 self.stdout.write(f"already have  {g}")
                 continue
@@ -35,10 +29,37 @@ class Command(BaseCommand):
             except Exception as exc:  # no credentials / network / quota
                 self.stderr.write(f"FAILED {g}: {exc}")
                 continue
-            obj = existing or GraphemeSound(classroom=classroom, grapheme=g)
+            obj = existing or GraphemeSound(classroom=None, grapheme=g, source="google")
             obj.source = "google"
-            obj.audio.save(f"{g.lower()}.mp3", ContentFile(audio), save=True)
+            obj.audio.save(f"shared_{g.lower()}.mp3", ContentFile(audio), save=True)
             self.stdout.write(self.style.SUCCESS(f"generated {g}"))
+
+    def _generate_for(self, classroom, opts):
+        self.stdout.write(f"Generating sounds for {classroom.name} ({classroom.code})...")
+        graphemes = set(tts.GRAPHEME_IPA)
+        for word in classroom.words.filter(active=True):
+            graphemes.update(tts.split_graphemes(word.text))
+        self._generate_shared_graphemes(graphemes, opts)
+
+        # Whole-word audio for the "HEAR FULL WORD" button
+        for word in classroom.words.filter(active=True):
+            w = word.text
+            existing = classroom.word_sounds.filter(word=w).first()
+            if existing and existing.source == "custom":
+                self.stdout.write(f"keeping custom  {w}")
+                continue
+            if existing and not opts["force"]:
+                self.stdout.write(f"already have  {w}")
+                continue
+            try:
+                audio = tts.synthesize_word(w)
+            except Exception as exc:
+                self.stderr.write(f"FAILED {w}: {exc}")
+                continue
+            obj = existing or WordSound(classroom=classroom, word=w)
+            obj.source = "google"
+            obj.audio.save(f"{classroom.pk}_{w.lower()}.mp3", ContentFile(audio), save=True)
+            self.stdout.write(self.style.SUCCESS(f"generated word {w}"))
 
     def handle(self, *args, **opts):
         if opts["all"]:

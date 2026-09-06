@@ -28,6 +28,25 @@
   .toast.error { background: #dc3545; }
   @keyframes slideIn { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   .loading { opacity: 0.5; pointer-events: none; }
+
+  /* --- Small screens (iPhone) --- */
+  table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; white-space:nowrap; }
+  form { max-width:100%; }
+  input, select, textarea { max-width:100%; }
+  @media (max-width: 600px) {
+    h1 { font-size:1.4rem; }
+    .card { padding:12px 10px; }
+    .class-header { padding:12px 10px; }
+    .class-code { font-size:1.15rem; letter-spacing:.1em; }
+    .iconbtn { width:44px; height:44px; font-size:1.15rem; }
+    button, .btn { padding:10px 14px; min-height:44px; }
+    input, select { min-height:40px; }
+    th, td { padding:8px 6px; font-size:.92rem; }
+    .soundgrid { grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:8px; }
+    form[method="post"] { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    form[method="post"] input[name="name"], form[method="post"] input[name="pin"] { flex:1 1 120px; }
+    .row-actions { gap:8px; }
+  }
 </style>
 
 <h1>Teacher Dashboard</h1>
@@ -148,8 +167,10 @@
       </td>
       <td>
         <div class="row-actions">
-          <button class="iconbtn" title="Play" onclick="playWord('{{ w.text }}')">▶</button>
-          <button class="iconbtn" title="Record" onclick="toggleRecord('word', '{{ w.text }}', this)">🎙</button>
+          <button class="iconbtn" title="Play" aria-label="Play {{ w.text }}" onclick="playWord('{{ w.text }}')">▶</button>
+          <button class="iconbtn" title="Get Google voice" aria-label="Get Google voice for {{ w.text }}"
+                  onclick="googleWord('{{ w.text }}', this)">🌐</button>
+          <button class="iconbtn" title="Record" aria-label="Record {{ w.text }}" onclick="toggleRecord('word', '{{ w.text }}', this)">🎙</button>
           <button class="iconbtn delbtn" title="Delete recording"
                   {% if w.text not in word_sounds %}style="display:none"{% endif %}
                   onclick="delSound('word', '{{ w.text }}', this)">✕</button>
@@ -477,6 +498,20 @@ function attachFormHandler(form) {
       }
     }
   });
+}
+
+function googleWord(w, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '\u23F3'; }
+  var fd = new FormData();
+  fd.append('word', w);
+  fetch('/teacher/googleword/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res && res.success) { showToast(res.message, 'success'); markCustom('word', w); }
+      else showToast((res && res.message) || 'Could not fetch Google audio', 'error');
+    })
+    .catch(function () { showToast('Could not fetch Google audio', 'error'); })
+    .then(function () { if (btn) { btn.disabled = false; btn.textContent = '\uD83C\uDF10'; } });
 }
 
 function playWord(w) {
