@@ -7,7 +7,7 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from game import pets as petgen
 from game.models import Class, Kid, Pet
@@ -116,6 +116,21 @@ class BuyEggTests(TestCase):
 
 
 class HatchTests(TestCase):
+    """Async hatch tests: Celery runs eagerly (inline, same DB transaction)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from phonics_project.celery import app as celery_app
+        cls._was_eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = True
+
+    @classmethod
+    def tearDownClass(cls):
+        from phonics_project.celery import app as celery_app
+        celery_app.conf.task_always_eager = cls._was_eager
+        super().tearDownClass()
+
     def _egg(self, kid):
         bp = petgen.new_pet_blueprint()
         return Pet.objects.create(
@@ -129,9 +144,14 @@ class HatchTests(TestCase):
         _login(self.client, kid)
         with patch.dict("os.environ", {"DEEPAI_API_KEY": ""}):
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
-        self.assertEqual(resp.status_code, 503)
+        # Async flow: request is accepted, task runs (eagerly here) and fails.
+        self.assertEqual(resp.status_code, 200)
         pet.refresh_from_db()
         self.assertFalse(pet.hatched)
+        self.assertEqual(pet.hatch_status, "failed")
+        s = self.client.get(f"/api/pet/hatch/{pet.pk}/status/").json()
+        self.assertEqual(s["status"], "failed")
+        self.assertIn("error", s)
 
     def test_hatch_success_and_image_512(self):
         _, cr, kid = _setup()
@@ -143,6 +163,10 @@ class HatchTests(TestCase):
         self.assertTrue(d["ok"])
         pet.refresh_from_db()
         self.assertTrue(pet.hatched)
+        self.assertEqual(pet.hatch_status, "complete")
+        s = self.client.get(f"/api/pet/hatch/{pet.pk}/status/").json()
+        self.assertEqual(s["status"], "complete")
+        self.assertTrue(s["hatched"])
         from django.conf import settings
         import os as _os
         from PIL import Image
@@ -157,9 +181,10 @@ class HatchTests(TestCase):
         _login(self.client, kid)
         with patch("game.views._deepai_generate", return_value=_flat_png_bytes()):
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
-        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(resp.status_code, 200)
         pet.refresh_from_db()
         self.assertFalse(pet.hatched)
+        self.assertEqual(pet.hatch_status, "failed")
 
     def test_hatch_idempotent(self):
         _, cr, kid = _setup()
@@ -169,7 +194,24 @@ class HatchTests(TestCase):
             _post(self.client, f"/api/pet/hatch/{pet.pk}/")
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
             self.assertEqual(m.call_count, 1)
-        self.assertTrue(resp.json().get("duplicate"))
+        self.assertEqual(resp.json().get("status"), "complete")
+
+    def test_stuck_hatch_restarts(self):
+        """Regression: a pet stranded mid-hatch by a worker crash (e.g. the
+        PIL ModuleNotFoundError in production) must be restartable, including
+        legacy rows where hatch_updated is NULL."""
+        _, cr, kid = _setup()
+        pet = self._egg(kid)
+        Pet.objects.filter(pk=pet.pk).update(
+            hatch_status="halfway", hatch_updated=None)
+        _login(self.client, kid)
+        with patch("game.views._deepai_generate", return_value=_png_bytes()) as m:
+            resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(m.call_count, 1)
+        pet.refresh_from_db()
+        self.assertTrue(pet.hatched)
+        self.assertEqual(pet.hatch_status, "complete")
 
     def test_cannot_hatch_other_kids_egg(self):
         _, cr, kid = _setup()

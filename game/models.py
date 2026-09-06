@@ -222,6 +222,7 @@ class Pet(models.Model):
         ]
     )
     hatch_task_id = models.CharField(max_length=100, blank=True, default='')
+    hatch_updated = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         ordering = ["-created"]

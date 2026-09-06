@@ -4,6 +4,7 @@ import mimetypes
 import os
 from datetime import date, timedelta
 
+from django.utils import timezone
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
@@ -17,6 +18,8 @@ from .forms import TeacherSignupForm
 from .models import Class, GraphemeSound, Kid, Pet, SoundMiss, Word, WordSound
 
 logger = logging.getLogger(__name__)
+
+HATCH_STALE_SECONDS = 180  # in-flight hatch older than this is considered stuck
 
 mimetypes.add_type("audio/mpeg", ".mp3")
 mimetypes.add_type("audio/wav", ".wav")
@@ -1100,28 +1103,42 @@ def api_pet_hatch(request, pet_id):
     if pet.hatched:
         return JsonResponse({"ok": True, "status": "complete", "pet": _pet_dict(pet)})
     
-    # Already hatching? Return current status
+    # Already hatching? Return current status -- unless it is stuck.
+    # A worker crash can strand a pet in an in-flight status forever; if the
+    # status has not advanced in HATCH_STALE_SECONDS, restart the hatch.
     if pet.hatch_status not in ('unhatched', 'failed'):
-        return JsonResponse({"ok": True, "status": pet.hatch_status, "pet_id": pet.pk})
+        age = None
+        if pet.hatch_updated:
+            age = (timezone.now() - pet.hatch_updated).total_seconds()
+        if age is not None and age < HATCH_STALE_SECONDS:
+            return JsonResponse({"ok": True, "status": pet.hatch_status, "pet_id": pet.pk})
+        # age is None: row predates hatch_updated tracking (e.g. stranded by an
+        # old worker crash) -- treat as stale and restart rather than stick forever.
+        logger.warning(
+            f"Pet {pet.pk} hatch stuck in '{pet.hatch_status}' "
+            f"(age={'unknown' if age is None else int(age)}s) - restarting"
+        )
     
+    # Mark as started BEFORE dispatching, so the task's own status writes
+    # (which may land immediately, e.g. eager mode) are never clobbered.
+    pet.hatch_status = 'cracking'
+    pet.save(update_fields=['hatch_status'])
+
     # Start the hatch
     try:
         from game.tasks import hatch_pet_task
         result = hatch_pet_task.apply_async(args=[pet.pk])
         pet.hatch_task_id = result.id
-        pet.hatch_status = 'cracking'
-        pet.save(update_fields=['hatch_task_id', 'hatch_status'])
+        pet.save(update_fields=['hatch_task_id'])
         logger.info(f"Started Celery hatch task {result.id} for pet {pet.pk}")
     except Exception as e:
         # Celery not available - use thread fallback
         logger.warning(f"Celery unavailable, using thread fallback for pet {pet.pk}: {e}")
-        pet.hatch_status = 'cracking'
-        pet.save(update_fields=['hatch_status'])
-        
+
         def _thread_hatch():
             from game.tasks import hatch_pet_task
             hatch_pet_task(pet.pk)
-        
+
         thread = threading.Thread(target=_thread_hatch, daemon=True)
         thread.start()
     
@@ -1138,15 +1155,23 @@ def api_pet_hatch_status(request, pet_id):
     if not pet:
         return JsonResponse({"ok": False, "error": "not found"}, status=404)
     
+    status = pet.hatch_status
+    if not pet.hatched and status in ('cracking', 'halfway', 'hatching'):
+        if pet.hatch_updated is None or (timezone.now() - pet.hatch_updated).total_seconds() > HATCH_STALE_SECONDS:
+            logger.warning(f"Pet {pet.pk} hatch poll: stuck in '{status}', reporting failed")
+            pet.hatch_status = 'failed'
+            pet.save(update_fields=['hatch_status'])
+            status = 'failed'
+
     response = {
         "ok": True,
-        "status": pet.hatch_status,
+        "status": status,
         "hatched": pet.hatched,
     }
-    
+
     if pet.hatched:
         response["pet"] = _pet_dict(pet)
-    elif pet.hatch_status == 'failed':
+    elif status == 'failed':
         response["error"] = "The egg is not ready - try again soon!"
     
     return JsonResponse(response)
