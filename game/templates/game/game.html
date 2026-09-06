@@ -146,7 +146,8 @@
   <div class="scorepill">&#11088; <span id="score">{{ kid.points_week }}</span></div>
   <div style="font-weight:800;">{{ kid.icon }} {{ kid.name }}
     {% if kid.streak %}<span title="streak">&#128293;{{ kid.streak }}</span>{% endif %}</div>
-  <div><a class="btn" href="{% url 'leaderboard' %}">&#127942;</a>
+  <div>{% if classroom.pets_enabled %}<a class="btn" style="background:#7c4dff;" href="{% url 'pet_area' %}" title="My pets">&#129370;</a>{% endif %}
+       <a class="btn" href="{% url 'leaderboard' %}">&#127942;</a>
        <a class="btn" style="background:#888;" href="{% url 'logout_kid' %}">Bye!</a></div>
 </div>
 
@@ -211,6 +212,23 @@
     </div>
   </div>
 </div>
+
+<div id="companion" style="display:none;" aria-label="pet buddy">
+  <img id="companionImg" src="" alt="">
+  <div id="companionName"></div>
+</div>
+<style>
+  #companion { position:fixed; left:10px; bottom:10px; z-index:40; text-align:center;
+               cursor:pointer; user-select:none; -webkit-user-select:none; }
+  #companion img { width:84px; height:84px; border-radius:50%; border:3px solid #fff;
+                   box-shadow:0 3px 10px rgba(0,0,0,.25); background:#f2ecff; }
+  #companionName { font-weight:800; font-size:.85rem; background:#fff; border-radius:999px;
+                   padding:2px 8px; margin-top:-8px; box-shadow:0 2px 6px rgba(0,0,0,.15); }
+  #companion.bounce img { animation: compBounce .5s; }
+  @keyframes compBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-16px)} }
+  @media (prefers-reduced-motion: reduce) { #companion.bounce img { animation:none; } }
+  @media (max-width:600px) { #companion img { width:64px; height:64px; } }
+</style>
 
 {{ words|json_script:"words-data" }}
 {{ game_config|json_script:"game-config" }}
@@ -532,6 +550,7 @@ function checkWin() {
   var ov = document.getElementById('celebrate');
   ov.classList.add('show');
   confettiBurst();
+  if (CONFIG.companion && Math.random() < 0.5) setTimeout(companionChirp, 1200);
   // Track progress for balloon + boss features
   var upper = w.text.toUpperCase();
   if (progress.spelled.indexOf(upper) === -1) progress.spelled.push(upper);
@@ -590,6 +609,25 @@ function showToast(message, type) {
 var CONFIG = { balloon_enabled: true, balloon_frequency: 3, boss_enabled: true };
 try { CONFIG = JSON.parse(document.getElementById('game-config').textContent); } catch (e) {}
 var REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============= Pet companion ============= */
+var companionEl = document.getElementById('companion');
+function companionChirp() {
+  if (!CONFIG.companion) return;
+  var idx = Math.floor(Math.random() * 5);
+  var a = new Audio('/petsound/' + CONFIG.companion.id + '/' + idx + '/');
+  a.play().catch(function () {});   // silent if voice not generated yet
+  companionEl.classList.remove('bounce');
+  void companionEl.offsetWidth;     // restart animation
+  companionEl.classList.add('bounce');
+}
+if (CONFIG.companion && companionEl) {
+  document.getElementById('companionImg').src = CONFIG.companion.image_url;
+  document.getElementById('companionImg').alt = CONFIG.companion.name;
+  document.getElementById('companionName').textContent = CONFIG.companion.name;
+  companionEl.style.display = 'block';
+  companionEl.addEventListener('click', companionChirp);
+}
 
 // Words the kid has completed this session (uppercase), persisted so a
 // reload mid-session doesn't lose progress. Keyed by kid id so students
