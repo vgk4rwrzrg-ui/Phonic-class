@@ -1,11 +1,12 @@
 import json
 import mimetypes
+import os
 from datetime import date, timedelta
 
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
@@ -815,6 +816,78 @@ def teacher_google_word(request):
     obj.source = "google"
     obj.audio.save(f"{cr.pk}_{word.lower()}.mp3", ContentFile(raw), save=True)
     return JsonResponse({"success": True, "message": f"Google audio ready for {word}"})
+
+
+# ---- Spoken phrases (praise, hints, boss lines) ------------------------------
+
+def phrase_sound(request, slug):
+    """Serve Google TTS audio for a registered game phrase, generating and
+    caching it on first use. Unknown slugs 404 (browser TTS fallback)."""
+    from django.conf import settings
+    from game import phrases as phrase_registry
+
+    kid = get_kid(request)
+    cr = kid.classroom if kid else _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    registry = phrase_registry.all_phrases()
+    text = registry.get(slug)
+    if not text:
+        return JsonResponse({"ok": False, "error": "unknown phrase"}, status=404)
+
+    pdir = os.path.join(settings.MEDIA_ROOT, "phrases")
+    path = os.path.join(pdir, f"{slug}.mp3")
+    if not os.path.exists(path):
+        try:
+            raw = tts.synthesize_phrase(text)
+        except Exception:  # no credentials -> browser TTS fallback
+            return JsonResponse({"ok": False, "error": "tts unavailable"}, status=404)
+        os.makedirs(pdir, exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(raw)
+    return FileResponse(open(path, "rb"), content_type="audio/mpeg")
+
+
+@login_required
+def teacher_audio_zip(request):
+    """Download every generated/recorded audio file as one zip."""
+    import io
+    import zipfile
+    from django.conf import settings
+    from django.http import HttpResponse
+
+    cr = _teacher_classroom(request)
+    if not cr:
+        return JsonResponse({"success": False, "message": "No active class"}, status=400)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Shared + this class's letter sounds
+        for gs in GraphemeSound.objects.filter(
+                Q(classroom__isnull=True) | Q(classroom=cr)):
+            if gs.audio:
+                try:
+                    tag = "custom" if gs.source == "custom" else "google"
+                    zf.writestr(f"letters/{gs.grapheme}_{tag}.mp3", gs.audio.read())
+                except FileNotFoundError:
+                    continue
+        # This class's word sounds
+        for ws in cr.word_sounds.all():
+            if ws.audio:
+                try:
+                    zf.writestr(f"words/{ws.word}_{ws.source}.mp3", ws.audio.read())
+                except FileNotFoundError:
+                    continue
+        # Spoken phrases (praise, hints, boss lines)
+        pdir = os.path.join(settings.MEDIA_ROOT, "phrases")
+        if os.path.isdir(pdir):
+            for name in sorted(os.listdir(pdir)):
+                if name.endswith(".mp3"):
+                    zf.write(os.path.join(pdir, name), f"phrases/{name}")
+    buf.seek(0)
+    resp = HttpResponse(buf.read(), content_type="application/zip")
+    resp["Content-Disposition"] = f'attachment; filename="phonics_audio_{cr.code}.zip"'
+    return resp
 
 
 # ---- Teacher dashboard boss/balloon settings --------------------------------

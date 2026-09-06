@@ -1,7 +1,7 @@
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 
-from game import tts
+from game import phrases, tts
 from game.models import Class, GraphemeSound, Word, WordSound
 
 
@@ -61,6 +61,28 @@ class Command(BaseCommand):
             obj.audio.save(f"{classroom.pk}_{w.lower()}.mp3", ContentFile(audio), save=True)
             self.stdout.write(self.style.SUCCESS(f"generated word {w}"))
 
+    def _generate_phrases(self, opts):
+        """Praise / hint / boss-line audio shared by every classroom."""
+        import os
+
+        from django.conf import settings
+
+        pdir = os.path.join(settings.MEDIA_ROOT, "phrases")
+        os.makedirs(pdir, exist_ok=True)
+        for slug, text in sorted(phrases.all_phrases().items()):
+            path = os.path.join(pdir, f"{slug}.mp3")
+            if os.path.exists(path) and not opts["force"]:
+                self.stdout.write(f"already have  {slug}")
+                continue
+            try:
+                raw = tts.synthesize_phrase(text)
+            except Exception as exc:
+                self.stderr.write(f"FAILED {slug}: {exc}")
+                continue
+            with open(path, "wb") as fh:
+                fh.write(raw)
+            self.stdout.write(self.style.SUCCESS(f"generated phrase {slug}"))
+
     def handle(self, *args, **opts):
         if opts["all"]:
             classrooms = list(Class.objects.order_by("name"))
@@ -73,4 +95,5 @@ class Command(BaseCommand):
             return
         for cr in classrooms:
             self._generate_for(cr, opts)
+        self._generate_phrases(opts)
         self.stdout.write(self.style.SUCCESS("done"))
