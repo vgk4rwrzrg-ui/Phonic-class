@@ -232,7 +232,19 @@ def word_sound(request, word):
     obj = WordSound.objects.filter(classroom=cr, word=w).first()
     if obj and obj.audio:
         return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
-    return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    # No recording: fall back to Google TTS for whole words (same as graphemes).
+    # Only synthesize words that belong to this class, so kids can't spend the
+    # teacher's TTS quota on arbitrary text.
+    if not cr.words.filter(text=w).exists():
+        return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    try:
+        raw = tts.synthesize_word(w)
+    except Exception:  # no credentials / network / quota -> browser TTS fallback
+        return JsonResponse({"ok": False, "error": "no word sound"}, status=404)
+    obj = obj or WordSound(classroom=cr, word=w)
+    obj.source = "google"
+    obj.audio.save(f"{cr.pk}_{w.lower()}.mp3", ContentFile(raw), save=True)
+    return FileResponse(obj.audio.open("rb"), content_type=_content_type(obj.audio.name))
 
 
 # -------- Teacher recording (scoped to active class) --------
@@ -257,6 +269,7 @@ def teacher_record(request):
     if word:
         cleaned, ext = audio.clean_audio(f.read(), f.name)
         obj, _ = WordSound.objects.get_or_create(classroom=cr, word=word)
+        obj.source = "custom"
         obj.audio.save(f"{cr.pk}_{word.lower()}.{ext}", ContentFile(cleaned), save=True)
         return JsonResponse({"ok": True, "word": word})
     return JsonResponse({"ok": False, "error": "need grapheme or word"}, status=400)

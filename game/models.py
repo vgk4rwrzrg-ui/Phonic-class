@@ -113,9 +113,12 @@ class GraphemeSound(models.Model):
 
 
 class WordSound(models.Model):
+    SOURCES = [("custom", "custom"), ("google", "google")]
+
     classroom = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="word_sounds")
     word = models.CharField(max_length=20)
     audio = models.FileField(upload_to="word_sounds/")
+    source = models.CharField(max_length=10, choices=SOURCES, default="custom")
 
     class Meta:
         unique_together = [("classroom", "word")]

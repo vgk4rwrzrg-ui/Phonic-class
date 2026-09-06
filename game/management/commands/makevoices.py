@@ -2,11 +2,11 @@ from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 
 from game import tts
-from game.models import Class, GraphemeSound, Word
+from game.models import Class, GraphemeSound, Word, WordSound
 
 
 class Command(BaseCommand):
-    help = "Pre-generate letter sounds with Google Cloud TTS for a class (custom uploads are kept)."
+    help = "Pre-generate letter AND word sounds with Google Cloud TTS for a class (custom uploads are kept)."
 
     def add_arguments(self, parser):
         parser.add_argument("--class", dest="code", help="Class code. Defaults to first class.")
@@ -39,6 +39,26 @@ class Command(BaseCommand):
             obj.source = "google"
             obj.audio.save(f"{g.lower()}.mp3", ContentFile(audio), save=True)
             self.stdout.write(self.style.SUCCESS(f"generated {g}"))
+
+        # Whole-word audio for the "HEAR FULL WORD" button
+        for word in classroom.words.filter(active=True):
+            w = word.text
+            existing = classroom.word_sounds.filter(word=w).first()
+            if existing and existing.source == "custom":
+                self.stdout.write(f"keeping custom  {w}")
+                continue
+            if existing and not opts["force"]:
+                self.stdout.write(f"already have  {w}")
+                continue
+            try:
+                audio = tts.synthesize_word(w)
+            except Exception as exc:
+                self.stderr.write(f"FAILED {w}: {exc}")
+                continue
+            obj = existing or WordSound(classroom=classroom, word=w)
+            obj.source = "google"
+            obj.audio.save(f"{classroom.pk}_{w.lower()}.mp3", ContentFile(audio), save=True)
+            self.stdout.write(self.style.SUCCESS(f"generated word {w}"))
 
     def handle(self, *args, **opts):
         if opts["all"]:

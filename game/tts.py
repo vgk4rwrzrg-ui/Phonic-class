@@ -74,3 +74,21 @@ def synthesize(grapheme):
         input=synthesis_input, voice=voice, audio_config=audio_config
     )
     return response.audio_content
+
+
+def synthesize_word(word):
+    """Return MP3 audio bytes for a whole word via Google Cloud TTS."""
+    from google.cloud import texttospeech
+
+    w = (word or "").strip().lower()
+    client = texttospeech.TextToSpeechClient()
+    synthesis_input = texttospeech.SynthesisInput(text=w)
+    voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=VOICE_NAME)
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=0.85,   # a touch slower for young learners
+    )
+    response = client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+    return response.audio_content
