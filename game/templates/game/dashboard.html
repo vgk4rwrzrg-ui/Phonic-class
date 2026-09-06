@@ -196,6 +196,51 @@
   </div>
 </div>
 
+
+<div class="card">
+  <h2>🎈 Bonus games</h2>
+  <form id="bonusSettingsForm">
+    <label style="display:block;margin:8px 0;">
+      <input type="checkbox" id="balloonEnabled" {% if classroom.balloon_enabled %}checked{% endif %}>
+      Balloon challenge on
+    </label>
+    <label style="display:block;margin:8px 0;">
+      Balloon round every
+      <input type="number" id="balloonFrequency" min="0" max="20"
+             value="{{ classroom.balloon_frequency }}" style="width:70px;"
+             aria-label="Balloon challenge frequency">
+      words (0 = never)
+    </label>
+    <label style="display:block;margin:8px 0;">
+      <input type="checkbox" id="bossEnabled" {% if classroom.boss_enabled %}checked{% endif %}>
+      Baron Blot boss fight on
+    </label>
+    <button type="submit">Save bonus settings</button>
+  </form>
+
+  <h3 style="margin-top:16px;">🦹 Baron Blot status</h3>
+  {% if boss_rows %}
+  <table>
+    <tr><th>Kid</th><th>Eligible</th><th>Boss HP</th><th>Beaten</th><th>Reward</th><th>List current?</th></tr>
+    {% for row in boss_rows %}
+    <tr>
+      <td>{{ row.kid.icon }} {{ row.kid.name }}</td>
+      <td>{% if row.fight %}✅ Yes{% else %}— Not yet{% endif %}</td>
+      <td>{% if row.fight %}{{ row.fight.boss_hp }} / {{ row.fight.boss_max_hp }}{% else %}—{% endif %}</td>
+      <td>{% if row.fight and row.fight.completed %}🏆 Yes{% else %}—{% endif %}</td>
+      <td>{% if row.fight and row.fight.reward_claimed %}⭐ Given{% else %}—{% endif %}</td>
+      <td>{% if row.fight %}{% if row.current %}✅{% else %}⚠️ older list{% endif %}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p style="font-size:.85rem;color:#567;">A kid becomes eligible after spelling every active word.
+     "⚠️ older list" means the fight was for a previous word list — the kid will get a fresh
+     Baron Blot for the current words.</p>
+  {% else %}
+  <p>No kids in this class yet.</p>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2>🔍 Trouble sounds</h2>
   {% if trouble %}
@@ -568,6 +613,32 @@ if (uploadForm) {
         uploadForm.reset();
       })
       .catch(function () { alert('Upload failed'); });
+  });
+}
+
+// Bonus games settings (balloon + boss)
+var bonusForm = document.getElementById('bonusSettingsForm');
+if (bonusForm) {
+  bonusForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = bonusForm.querySelector('button[type=submit]');
+    if (btn) btn.disabled = true;
+    fetch('/teacher/settings/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify({
+        balloon_enabled: document.getElementById('balloonEnabled').checked,
+        balloon_frequency: document.getElementById('balloonFrequency').value,
+        boss_enabled: document.getElementById('bossEnabled').checked
+      })
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res && res.success) showToast(res.message || 'Settings saved', 'success');
+      else showToast((res && res.message) || 'Could not save settings', 'error');
+    })
+    .catch(function () { showToast('Could not save settings — check your connection.', 'error'); })
+    .then(function () { if (btn) btn.disabled = false; });
   });
 }
 </script>

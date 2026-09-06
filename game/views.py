@@ -144,8 +144,17 @@ def game(request):
     kid = get_kid(request)
     if not kid:
         return redirect("picker")
-    words = list(kid.classroom.words.filter(active=True).values("text", "level"))
-    return render(request, "game/game.html", {"kid": kid, "words": words, "classroom": kid.classroom})
+    cr = kid.classroom
+    words = list(cr.words.filter(active=True).values("text", "level"))
+    game_config = {
+        "balloon_enabled": cr.balloon_enabled,
+        "balloon_frequency": cr.balloon_frequency,
+        "boss_enabled": cr.boss_enabled,
+        "kid_id": kid.pk,
+    }
+    return render(request, "game/game.html",
+                  {"kid": kid, "words": words, "classroom": cr,
+                   "game_config": game_config})
 
 
 # -------- APIs --------
@@ -438,6 +447,17 @@ def dashboard(request):
 
     trouble = (SoundMiss.objects.filter(kid__classroom=classroom)
                .values("sound").annotate(total=Sum("count")).order_by("-total")[:12]) if classroom else []
+    boss_rows = []
+    if classroom:
+        current_version = classroom.active_word_list_version()
+        for k in classroom.kids.order_by("name"):
+            fight = (k.boss_fights.order_by("-created").first()
+                     if hasattr(k, "boss_fights") else None)
+            boss_rows.append({
+                "kid": k,
+                "fight": fight,
+                "current": bool(fight and fight.word_list_version == current_version),
+            })
     return render(request, "game/dashboard.html", {
         "classroom": classroom,
         "classes": classes,
@@ -448,6 +468,7 @@ def dashboard(request):
                    .select_related("kid").order_by("kid__name", "-count")) if classroom else [],
         "sound_rows": _sound_rows(classroom) if classroom else [],
         "word_sounds": {ws.word for ws in classroom.word_sounds.all()} if classroom else set(),
+        "boss_rows": boss_rows,
     })
 
 
@@ -623,9 +644,7 @@ def api_boss_spell(request):
     word = str(data.get("word", "")).strip().upper()[:20]
 
     try:
-        fight = BossFight.objects.select_for_update().get(
-            pk=fight_id, kid=kid
-        )
+        fight = BossFight.objects.get(pk=fight_id, kid=kid)
     except BossFight.DoesNotExist:
         return JsonResponse({"ok": False, "error": "fight not found"}, status=404)
 
@@ -643,7 +662,7 @@ def api_boss_spell(request):
         return JsonResponse({"ok": False, "error": "word not in active list"}, status=400)
 
     with transaction.atomic():
-        fight.refresh_from_db()
+        fight = BossFight.objects.select_for_update().get(pk=fight.pk)
         is_new = fight.add_spelled(word)
         damage = 0
         if is_new:
@@ -679,12 +698,12 @@ def api_boss_victory(request):
     fight_id = data.get("fight_id")
 
     try:
-        fight = BossFight.objects.select_for_update().get(pk=fight_id, kid=kid)
+        fight = BossFight.objects.get(pk=fight_id, kid=kid)
     except BossFight.DoesNotExist:
         return JsonResponse({"ok": False, "error": "fight not found"}, status=404)
 
     with transaction.atomic():
-        fight.refresh_from_db()
+        fight = BossFight.objects.select_for_update().get(pk=fight.pk)
         if fight.boss_hp != 0:
             return JsonResponse({"ok": False, "error": "boss not defeated"}, status=400)
 
