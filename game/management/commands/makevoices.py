@@ -16,17 +16,11 @@ class Command(BaseCommand):
             help="Regenerate Google sounds that already exist.",
         )
 
-    def _generate_for(self, classroom, opts):
-        self.stdout.write(f"Generating sounds for {classroom.name} ({classroom.code})...")
-        graphemes = set(tts.GRAPHEME_IPA)
-        for word in classroom.words.filter(active=True):
-            graphemes.update(tts.split_graphemes(word.text))
-
+    def _generate_shared_graphemes(self, graphemes, opts):
+        """Google letter sounds are shared by every classroom (classroom=None)."""
         for g in sorted(graphemes):
-            existing = classroom.grapheme_sounds.filter(grapheme=g).first()
-            if existing and existing.source == "custom":
-                self.stdout.write(f"keeping custom  {g}")
-                continue
+            existing = GraphemeSound.objects.filter(
+                classroom__isnull=True, grapheme=g).first()
             if existing and not opts["force"]:
                 self.stdout.write(f"already have  {g}")
                 continue
@@ -35,10 +29,17 @@ class Command(BaseCommand):
             except Exception as exc:  # no credentials / network / quota
                 self.stderr.write(f"FAILED {g}: {exc}")
                 continue
-            obj = existing or GraphemeSound(classroom=classroom, grapheme=g)
+            obj = existing or GraphemeSound(classroom=None, grapheme=g, source="google")
             obj.source = "google"
-            obj.audio.save(f"{g.lower()}.mp3", ContentFile(audio), save=True)
+            obj.audio.save(f"shared_{g.lower()}.mp3", ContentFile(audio), save=True)
             self.stdout.write(self.style.SUCCESS(f"generated {g}"))
+
+    def _generate_for(self, classroom, opts):
+        self.stdout.write(f"Generating sounds for {classroom.name} ({classroom.code})...")
+        graphemes = set(tts.GRAPHEME_IPA)
+        for word in classroom.words.filter(active=True):
+            graphemes.update(tts.split_graphemes(word.text))
+        self._generate_shared_graphemes(graphemes, opts)
 
         # Whole-word audio for the "HEAR FULL WORD" button
         for word in classroom.words.filter(active=True):

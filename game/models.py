@@ -99,8 +99,13 @@ class SoundMiss(models.Model):
 
 
 class GraphemeSound(models.Model):
+    """A letter/grapheme sound. classroom=None means a shared Google TTS sound
+    used by every classroom; teacher recordings are always per-classroom."""
+
     SOURCES = [("google", "Google TTS"), ("custom", "Teacher upload")]
-    classroom = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="grapheme_sounds")
+    classroom = models.ForeignKey(Class, on_delete=models.CASCADE,
+                                  related_name="grapheme_sounds",
+                                  null=True, blank=True)
     grapheme = models.CharField(max_length=8)
     audio = models.FileField(upload_to="sounds/")
     source = models.CharField(max_length=10, choices=SOURCES, default="google")

@@ -39,6 +39,7 @@ urlpatterns = [
     path("teacher/record/", views.teacher_record, name="teacher_record"),
     path("teacher/delete/", views.teacher_delete, name="teacher_delete"),
     path("teacher/settings/", views.api_teacher_settings, name="api_teacher_settings"),
+    path("teacher/googleword/", views.teacher_google_word, name="teacher_google_word"),
     path("teacher/login/",
          auth_views.LoginView.as_view(template_name="game/teacher_login.html"),
          name="login"),
