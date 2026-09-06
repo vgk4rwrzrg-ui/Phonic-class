@@ -17,18 +17,24 @@ class Command(BaseCommand):
             "--force", action="store_true",
             help="Regenerate Google sounds that already exist.",
         )
+        parser.add_argument(
+            "--letters",
+            help="Comma-separated graphemes to force-regenerate (e.g. S,F,SH).",
+        )
 
     def _generate_shared_graphemes(self, graphemes, opts):
         """Google letter sounds are shared by every classroom (classroom=None)."""
+        forced = {x.strip().upper() for x in (opts.get("letters") or "").split(",") if x.strip()}
         for g in sorted(graphemes):
             existing = GraphemeSound.objects.filter(
                 classroom__isnull=True, grapheme=g).first()
-            if existing and not opts["force"]:
+            if existing and not opts["force"] and g not in forced:
                 self.stdout.write(f"already have  {g}")
                 continue
             try:
                 audio = tts.synthesize(g)
             except Exception as exc:  # no credentials / network / quota
+                self.failures.append(f"{g}: {exc}")
                 self.stderr.write(f"FAILED {g}: {exc}")
                 continue
             obj = existing or GraphemeSound(classroom=None, grapheme=g, source="google")
@@ -56,6 +62,7 @@ class Command(BaseCommand):
             try:
                 audio = tts.synthesize_word(w)
             except Exception as exc:
+                self.failures.append(f"{w}: {exc}")
                 self.stderr.write(f"FAILED {w}: {exc}")
                 continue
             obj = existing or WordSound(classroom=classroom, word=w)
@@ -79,6 +86,7 @@ class Command(BaseCommand):
             try:
                 raw = tts.synthesize_phrase(text)
             except Exception as exc:
+                self.failures.append(f"{slug}: {exc}")
                 self.stderr.write(f"FAILED {slug}: {exc}")
                 continue
             with open(path, "wb") as fh:
@@ -106,7 +114,16 @@ class Command(BaseCommand):
         if not classrooms:
             self.stderr.write("No class found.")
             return
+        self.failures = []
         for cr in classrooms:
             self._generate_for(cr, opts)
         self._generate_phrases(opts)
-        self.stdout.write(self.style.SUCCESS("done"))
+        if self.failures:
+            self.stderr.write(self.style.ERROR(
+                f"\nDONE WITH {len(self.failures)} FAILURE(S) - these sounds "
+                "were NOT generated:"))
+            for f in self.failures:
+                self.stderr.write(f"  {f}")
+            self.stderr.write("Run 'python manage.py ttscheck' to diagnose.")
+        else:
+            self.stdout.write(self.style.SUCCESS("done - no failures"))

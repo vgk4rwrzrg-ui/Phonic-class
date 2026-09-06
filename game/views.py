@@ -816,9 +816,11 @@ def teacher_google_word(request):
                              "message": f"{word} has a custom recording — delete it first"})
     try:
         raw = tts.synthesize_word(word)
-    except Exception:
+    except Exception as exc:
         return JsonResponse({"success": False,
-                             "message": "Google TTS unavailable — check credentials"}, status=503)
+                             "message": "Google TTS unavailable: "
+                             + str(exc)[:160]
+                             + " (run: python manage.py ttscheck)"}, status=503)
     obj = existing or WordSound(classroom=cr, word=word)
     obj.source = "google"
     obj.audio.save(f"{cr.pk}_{word.lower()}.mp3", ContentFile(raw), save=True)
@@ -1044,6 +1046,19 @@ def _deepai_generate(prompt):
     return img.content
 
 
+def _looks_blank(raw_bytes):
+    """True if the image is (nearly) one flat color - a failed generation."""
+    import io
+    from PIL import Image, ImageStat
+
+    try:
+        im = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+    except Exception:
+        return True
+    stat = ImageStat.Stat(im)
+    return max(stat.stddev) < 8.0
+
+
 def _save_pet_image(pet, raw_bytes):
     """Normalize to exactly 512x512 PNG and store under MEDIA_ROOT/pets/."""
     import io
@@ -1081,6 +1096,11 @@ def api_pet_hatch(request, pet_id):
         return JsonResponse({"ok": False, "error":
                              "The egg is not ready - try again soon!"}, status=502)
     except Exception:
+        return JsonResponse({"ok": False, "error":
+                             "The egg is not ready - try again soon!"}, status=502)
+
+    if _looks_blank(raw):
+        # Flat single-color output means generation failed; keep the egg.
         return JsonResponse({"ok": False, "error":
                              "The egg is not ready - try again soon!"}, status=502)
 
