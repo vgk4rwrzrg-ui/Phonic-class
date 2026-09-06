@@ -312,7 +312,7 @@ function phraseSlug(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 var phrasePool = {};
-function sayPhrase(text) {
+function sayPhrase(text, onDone) {
   var slug = phraseSlug(text);
   var a = phrasePool[slug];
   if (!a) {
@@ -321,10 +321,18 @@ function sayPhrase(text) {
     phrasePool[slug] = a;
   }
   try { a.currentTime = 0; } catch (e) {}
-  var fallback = function () { speak(text, { cancel: true }); };
+  var finished = false;
+  var done = function () { if (finished) return; finished = true; if (onDone) onDone(); };
+  var fallback = function () {
+    if (finished) return;
+    speak(text, { cancel: true });
+    setTimeout(done, 1400);   // rough length of the spoken fallback
+  };
   a.onerror = fallback;
+  a.onended = done;
   var p = a.play();
   if (p && p.catch) p.catch(fallback);
+  setTimeout(done, 6000);     // safety net: a stalled download never freezes the game
 }
 
 // Letter sounds come from /sound/<grapheme>/ (custom file if uploaded,
@@ -657,17 +665,7 @@ function allWordsSpelled() {
 var BALLOON_COLORS = ['#ff6b6b', '#4da3ff', '#26c281', '#f5a623', '#9b59d0', '#ee5a93'];
 var balloonState = null; // {seq:[], idx:0, balloons:[], raf:null, active:false, nonce:''}
 
-function learnedGraphemes() {
-  // Characters from words the learner has already spelled; fall back to
-  // graphemes of the active word list so the round is always playable.
-  var source = progress.spelled.length ? progress.spelled
-             : WORDS.map(function (w) { return w.text; });
-  var set = {};
-  source.forEach(function (word) {
-    wordToUnits(word).forEach(function (u) { set[u.g] = true; });
-  });
-  return Object.keys(set);
-}
+// (balloon rounds now spell a real word from the class list)
 
 function shouldTriggerBalloon() {
   if (!CONFIG.balloon_enabled || !CONFIG.balloon_frequency) return false;
@@ -676,16 +674,30 @@ function shouldTriggerBalloon() {
   return progress.rounds > 0 && progress.rounds % CONFIG.balloon_frequency === 0;
 }
 
-function balloonDifficulty() { return progress.rounds >= CONFIG.balloon_frequency * 3 ? 3 : 2; }
+function balloonDifficulty() {
+  // Starts at 2 and grows by 1 for every three balloon rounds' worth of
+  // spelling, capped at 5.  Every level above 2 adds one decoy balloon.
+  var freq = CONFIG.balloon_frequency || 3;
+  return Math.min(5, 2 + Math.floor(progress.rounds / (freq * 3)));
+}
 
 function startBalloonRound() {
-  var pool = learnedGraphemes();
-  if (pool.length < 2) return false;
-  var count = Math.min(balloonDifficulty(), pool.length);
-  shuffle(pool);
-  var seq = pool.slice(0, count);
+  if (!WORDS.length) return false;
+  var pick = WORDS[Math.floor(Math.random() * WORDS.length)];
+  var word = pick.text.toUpperCase();
+  var units = wordToUnits(word);
+  if (units.length < 2) return false;
+  var seq = units.map(function (u) { return u.g; });
+  // Difficulty above 2 mixes in decoy letters that are NOT in the word,
+  // to try to throw the speller off.
+  var decoyCount = Math.max(0, balloonDifficulty() - 2);
+  var decoyPool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(function (c) {
+    return seq.indexOf(c) === -1;
+  });
+  shuffle(decoyPool);
+  var decoys = decoyPool.slice(0, decoyCount);
   balloonState = {
-    seq: seq, idx: 0, balloons: [], raf: null, active: true,
+    word: word, seq: seq, idx: 0, balloons: [], raf: null, active: true,
     nonce: 'b' + Date.now() + '-' + Math.floor(Math.random() * 1e6)
   };
   var overlay = document.getElementById('balloonOverlay');
@@ -693,9 +705,11 @@ function startBalloonRound() {
   renderBalloonSeq();
   var stage = document.getElementById('balloonStage');
   stage.innerHTML = '';
-  var order = seq.slice(); shuffle(order);
-  order.forEach(function (g, i) { spawnBalloon(g, i, count); });
-  sayPhrase('Pop the balloons in order!');
+  var order = seq.concat(decoys); shuffle(order);
+  order.forEach(function (g, i) { spawnBalloon(g, i, order.length); });
+  sayPhrase('Pop the balloons to spell the word!', function () {
+    if (balloonState && balloonState.active) playWord({ text: word });
+  });
   balloonLoop();
   return true;
 }
@@ -935,18 +949,23 @@ function bossWordComplete() {
     art.classList.remove('hit'); void art.offsetWidth; art.classList.add('hit');
     updateBossHp();
     updateBossRecovered();
-    sayPhrase('Take that, Baron Blot!');
-    if (res.completed || bossState.hp === 0) {
-      setTimeout(bossVictory, 700);
-    } else if (bossState.queue.length) {
-      setTimeout(nextBossWord, 900);
-    } else {
+    // Wait for the cheer to finish before the next word plays, so the
+    // audio never overlaps.
+    var afterCheer = function () {
+      if (!bossState) return;                     // fight was closed meanwhile
+      if (res.completed || bossState.hp === 0) {
+        bossVictory();
+      } else if (bossState.queue.length) {
+        nextBossWord();
+      } else {
       // Teacher added words mid-fight: refresh from server status
-      api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (r2) {
-        if (r2 && r2.ok && r2.eligible) { openBossRefresh(r2); }
-        else { closeBoss(); showToast('The word list changed \u2014 keep spelling!', 'error'); }
-      });
-    }
+        api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (r2) {
+          if (r2 && r2.ok && r2.eligible) { openBossRefresh(r2); }
+          else { closeBoss(); showToast('The word list changed \u2014 keep spelling!', 'error'); }
+        });
+      }
+    };
+    sayPhrase('Take that, Baron Blot!', afterCheer);
   });
 }
 
