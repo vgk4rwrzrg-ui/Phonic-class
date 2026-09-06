@@ -65,7 +65,7 @@
 
   <div class="pet-grid" id="petGrid">
     {% for p in pets %}
-    <div class="pet-card {% if p.is_companion %}companion{% endif %}" data-id="{{ p.pk }}">
+    <div class="pet-card {% if p.is_companion %}companion{% endif %}" data-id="{{ p.pk }}" data-hstatus="{{ p.hatch_status }}">
       {% if p.hatched %}
         <img class="pet-img" src="/petimage/{{ p.pk }}/" alt="{{ p.name }}">
         <div class="pet-name">{{ p.name }}</div>
@@ -128,27 +128,130 @@ buyBtn.addEventListener('click', function() {
   }).catch(function(){ buyBtn.disabled = false; showToast('Connection problem', true); });
 });
 
+// ---- async hatch polling ----
+var HATCH_STAGES = {
+  cracking: { cracks: '\u26A1', crackCls: 'crack', eggCls: 'wobble', label: 'Cracking...' },
+  halfway:  { cracks: '\u26A1\u26A1', crackCls: 'crack crack-more', eggCls: 'wobble', label: 'Almost there...' },
+  hatching: { cracks: '\u26A1\u26A1\u26A1', crackCls: 'crack crack-lots', eggCls: 'pulse', label: 'Hatching!' }
+};
+
+function resetHatchBtn(b) {
+  b.disabled = false;
+  b.innerHTML = '&#10024; Hatch!';
+}
+
+function setHatchStage(card, b, status) {
+  var stage = HATCH_STAGES[status] || HATCH_STAGES.cracking;
+  var egg = card.querySelector('.egg-face');
+  if (egg) {
+    egg.classList.remove('wobble', 'pulse');
+    egg.classList.add(stage.eggCls);
+    var crack = egg.querySelector('.crack');
+    if (!crack) {
+      crack = document.createElement('span');
+      egg.appendChild(crack);
+    }
+    crack.className = stage.crackCls;
+    crack.textContent = stage.cracks;
+  }
+  b.disabled = true;
+  b.textContent = stage.label;
+}
+
+var hatchTimers = {};
+
+function pollHatch(petId, card, b) {
+  if (hatchTimers[petId]) return;   // already polling this egg
+  var fails = 0, ticks = 0;
+  hatchTimers[petId] = setInterval(function() {
+    ticks++;
+    if (ticks > 120) {   // ~4 minutes; server marks stale hatches failed by then
+      clearInterval(hatchTimers[petId]); delete hatchTimers[petId];
+      resetHatchBtn(b);
+      showToast('The egg is taking a while - tap Hatch to try again!', true);
+      return;
+    }
+    fetch('/api/pet/hatch/' + petId + '/status/')
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        fails = 0;
+        if (d.hatched || d.status === 'complete') {
+          clearInterval(hatchTimers[petId]); delete hatchTimers[petId];
+          setHatchStage(card, b, 'hatching');
+          showToast(((d.pet && d.pet.name) || 'Your pet') + ' hatched!');
+          setTimeout(function(){ location.reload(); }, 1200);
+        } else if (d.status === 'failed' || d.status === 'unhatched') {
+          clearInterval(hatchTimers[petId]); delete hatchTimers[petId];
+          resetHatchBtn(b);
+          showToast(d.error || 'The egg is not ready - try again!', true);
+        } else if (d.ok) {
+          setHatchStage(card, b, d.status);
+        }
+      })
+      .catch(function() {
+        // One flaky poll is not a problem -- keep quietly retrying.
+        fails++;
+        if (fails >= 10) {
+          clearInterval(hatchTimers[petId]); delete hatchTimers[petId];
+          showToast('Still hatching! Come back in a minute.');
+        }
+      });
+  }, 2000);
+}
+
+function checkThenPoll(petId, card, b) {
+  fetch('/api/pet/hatch/' + petId + '/status/')
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.ok && (d.status === 'cracking' || d.status === 'halfway' || d.status === 'hatching' || d.hatched)) {
+        setHatchStage(card, b, d.status);
+        pollHatch(petId, card, b);
+      } else {
+        resetHatchBtn(b);
+        showToast('Connection problem - tap Hatch to try again!', true);
+      }
+    })
+    .catch(function() {
+      resetHatchBtn(b);
+      showToast('Connection problem - tap Hatch to try again!', true);
+    });
+}
+
+// Resume polling for eggs that were already hatching when the page loaded
+document.querySelectorAll('.pet-card').forEach(function(card) {
+  var st = card.dataset.hstatus;
+  if (st === 'cracking' || st === 'halfway' || st === 'hatching') {
+    var b = card.querySelector('[data-hatch]');
+    if (b) {
+      setHatchStage(card, b, st);
+      pollHatch(b.dataset.hatch, card, b);
+    }
+  }
+});
+
 // ---- hatch / talk / companion (event delegation) ----
 document.getElementById('petGrid').addEventListener('click', function(ev) {
   var b = ev.target.closest('button');
   if (!b) return;
 
   if (b.dataset.hatch) {
+    var card = b.closest('.pet-card');
     b.disabled = true;
-    b.innerHTML = '<span class="hatching">&#129370;</span> Hatching...';
     post('/api/pet/hatch/' + b.dataset.hatch + '/').then(function(d) {
-      if (d.ok) {
+      if (d.ok && d.pet) {
         showToast(d.pet.name + ' hatched!');
         setTimeout(function(){ location.reload(); }, 900);
+      } else if (d.ok) {
+        setHatchStage(card, b, d.status || 'cracking');
+        pollHatch(b.dataset.hatch, card, b);
       } else {
-        b.disabled = false;
-        b.innerHTML = '&#10024; Hatch!';
+        resetHatchBtn(b);
         showToast(d.error || 'Try again soon!', true);
       }
     }).catch(function() {
-      b.disabled = false;
-      b.innerHTML = '&#10024; Hatch!';
-      showToast('Connection problem', true);
+      // The request died (e.g. server restart) but the hatch may still have
+      // started -- check the status once instead of scaring the kid.
+      checkThenPoll(b.dataset.hatch, card, b);
     });
   }
 
