@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import string
+from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.db import models
@@ -17,6 +18,18 @@ def _new_class_code():
         code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
         if not Class.objects.filter(code=code).exists():
             return code
+
+
+class ClassManager(models.Manager):
+    def by_code(self, code):
+        """Look a class up by join code (case-insensitive), or None."""
+        return self.filter(code=(code or "").upper()).first()
+
+    def by_code_or_first(self, code):
+        """Management-command convenience: --class CODE, else oldest class."""
+        if code:
+            return self.by_code(code)
+        return self.order_by("id").first()
 
 
 class Class(models.Model):
@@ -42,6 +55,8 @@ class Class(models.Model):
         default=50, help_text="Points needed to buy one pet egg."
     )
 
+    objects = ClassManager()
+
     class Meta:
         verbose_name_plural = "classes"
         ordering = ["name"]
@@ -49,19 +64,31 @@ class Class(models.Model):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+    def active_words(self):
+        """Queryset of the currently active words for this class."""
+        return self.words.filter(active=True)
+
+    def active_word_texts(self):
+        """Flat list of active word texts (uppercased in the DB)."""
+        return list(self.active_words().values_list("text", flat=True))
+
     def active_word_list_version(self):
         """Stable hash of the current active word list, used to detect teacher edits."""
-        words = sorted(
-            self.words.filter(active=True).values_list("text", flat=True)
-        )
+        words = sorted(self.active_words().values_list("text", flat=True))
         raw = ",".join(words)
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 class Kid(models.Model):
+    """A student.
+
+    NOTE: PINs are deliberately stored as human-readable plain text so
+    teachers can look them up for young children — do NOT hash them.
+    """
+
     classroom = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="kids")
     name = models.CharField(max_length=30)
-    icon = models.CharField(max_length=8, default="🦊")
+    icon = models.CharField(max_length=8, default="\U0001f98a")
     pin = models.CharField(max_length=4, help_text="4-digit PIN")
     points_total = models.PositiveIntegerField(default=0)
     points_week = models.PositiveIntegerField(default=0)
@@ -75,6 +102,36 @@ class Kid(models.Model):
 
     def __str__(self):
         return f"{self.icon} {self.name}"
+
+    # ---- scoring ----------------------------------------------------------
+
+    @property
+    def spendable(self):
+        """Points available for the egg shop (earned minus spent)."""
+        return max(0, self.points_total - self.points_spent)
+
+    def bump_streak(self, today=None):
+        """Update the daily streak for a play event (idempotent per day)."""
+        today = today or date.today()
+        if self.last_played == today:
+            return
+        self.streak = (self.streak + 1
+                       if self.last_played == today - timedelta(days=1) else 1)
+        self.last_played = today
+
+    def award_points(self, pts, save=True):
+        """Add points to weekly/total tallies and bump the daily streak."""
+        self.points_total += pts
+        self.points_week += pts
+        self.bump_streak()
+        if save:
+            self.save()
+
+    def score_payload(self):
+        """Standard JSON fragment returned by every scoring endpoint."""
+        return {"points_week": self.points_week,
+                "points_total": self.points_total,
+                "streak": self.streak}
 
 
 class Word(models.Model):
@@ -96,13 +153,49 @@ class Word(models.Model):
         return self.text
 
 
+class SoundMissManager(models.Manager):
+    def record(self, kid, sound):
+        """Increment (creating if needed) the miss counter for one sound."""
+        miss, _ = self.get_or_create(kid=kid, sound=sound)
+        miss.count += 1
+        miss.save()
+        return miss
+
+    def trouble_sounds(self, classroom, limit=12):
+        """Most-missed sounds across a class, for the teacher dashboard."""
+        return (self.filter(kid__classroom=classroom)
+                .values("sound")
+                .annotate(total=models.Sum("count"))
+                .order_by("-total")[:limit])
+
+
 class SoundMiss(models.Model):
     kid = models.ForeignKey(Kid, on_delete=models.CASCADE, related_name="misses")
     sound = models.CharField(max_length=12)
     count = models.PositiveIntegerField(default=0)
 
+    objects = SoundMissManager()
+
     class Meta:
         unique_together = [("kid", "sound")]
+
+
+class GraphemeSoundManager(models.Manager):
+    def playable(self, classroom, grapheme):
+        """The sound a class should hear for a grapheme.
+
+        A teacher recording for this class wins; otherwise the shared Google
+        sound (classroom=None) so every classroom hears the same voice.
+        """
+        obj = self.filter(classroom=classroom, grapheme=grapheme,
+                          source="custom").first()
+        return obj or self.filter(classroom__isnull=True,
+                                  grapheme=grapheme).first()
+
+    def shared_graphemes(self):
+        """Set of grapheme texts that have a shared Google sound."""
+        return set(self.filter(classroom__isnull=True)
+                   .values_list("grapheme", flat=True))
 
 
 class GraphemeSound(models.Model):
@@ -116,6 +209,8 @@ class GraphemeSound(models.Model):
     grapheme = models.CharField(max_length=8)
     audio = models.FileField(upload_to="sounds/")
     source = models.CharField(max_length=10, choices=SOURCES, default="google")
+
+    objects = GraphemeSoundManager()
 
     class Meta:
         unique_together = [("classroom", "grapheme")]
@@ -189,6 +284,17 @@ class BossFight(models.Model):
         self.words_spelled = ",".join(sorted(s))
         return True
 
+    def summary(self):
+        """JSON fragment shared by the eligibility and status endpoints."""
+        return {
+            "fight_id": self.pk,
+            "boss_hp": self.boss_hp,
+            "boss_max_hp": self.boss_max_hp,
+            "completed": self.completed,
+            "reward_claimed": self.reward_claimed,
+            "words_spelled": list(self.spelled_set()),
+        }
+
 
 class Pet(models.Model):
     """A collectible pet bought with points.
@@ -198,6 +304,9 @@ class Pet(models.Model):
     image under MEDIA_ROOT/pets/.  Each pet has a fixed creature voice
     (Google TTS language/voice/pitch/rate) and five short gibberish phrases.
     """
+
+    # In-flight hatch statuses, in pipeline order.
+    HATCHING_STATUSES = ("cracking", "halfway", "hatching")
 
     kid = models.ForeignKey(Kid, on_delete=models.CASCADE, related_name="pets")
     name = models.CharField(max_length=30)
@@ -230,3 +339,17 @@ class Pet(models.Model):
     def __str__(self):
         state = "hatched" if self.hatched else "egg"
         return f"{self.name} ({state}) - {self.kid.name}"
+
+    def set_hatch_status(self, status, **extra_fields):
+        """Persist a hatch pipeline status (plus any extra field updates)."""
+        self.hatch_status = status
+        for name, value in extra_fields.items():
+            setattr(self, name, value)
+        self.save(update_fields=["hatch_status", *extra_fields])
+
+    def hatch_age_seconds(self):
+        """Seconds since the hatch status last advanced (None if unknown)."""
+        from django.utils import timezone
+        if not self.hatch_updated:
+            return None
+        return (timezone.now() - self.hatch_updated).total_seconds()

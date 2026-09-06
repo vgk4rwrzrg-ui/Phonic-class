@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from game.models import Class, Word
+from game.models import Class
 
 STARTERS = {
     1: ["CAT", "DOG", "SUN", "HAT", "PIG", "RED", "BUS", "MAP", "TEN", "BOX", "MUD", "LEG"],
@@ -16,10 +16,7 @@ class Command(BaseCommand):
         parser.add_argument("--class", dest="code", help="Class code (e.g. ABC123). Defaults to first class.")
 
     def handle(self, *args, **opts):
-        if opts["code"]:
-            classroom = Class.objects.filter(code=opts["code"].upper()).first()
-        else:
-            classroom = Class.objects.order_by("id").first()
+        classroom = Class.objects.by_code_or_first(opts["code"])
         if not classroom:
             self.stderr.write("No class found. Sign up first or pass --class CODE.")
             return

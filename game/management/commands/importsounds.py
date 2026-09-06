@@ -1,10 +1,9 @@
 import os
 
-from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 
-from game import audio
-from game.models import Class, GraphemeSound
+from game import sound_services
+from game.models import Class
 
 
 class Command(BaseCommand):
@@ -14,16 +13,23 @@ class Command(BaseCommand):
         parser.add_argument("folder", help="Folder containing audio files to import")
         parser.add_argument("--class", dest="code", help="Class code. Defaults to first class.")
 
+    def _import_file(self, classroom, path, name):
+        """Import one audio file; returns True if it became a grapheme sound."""
+        grapheme = os.path.splitext(name)[0].strip().upper()[:8]
+        if not grapheme:
+            return False
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        sound_services.save_custom_grapheme(classroom, grapheme, raw, name)
+        self.stdout.write(self.style.SUCCESS(f"imported {grapheme}"))
+        return True
+
     def handle(self, *args, **opts):
         folder = opts["folder"]
         if not os.path.isdir(folder):
             self.stderr.write(f"not a folder: {folder}")
             return
-
-        if opts["code"]:
-            classroom = Class.objects.filter(code=opts["code"].upper()).first()
-        else:
-            classroom = Class.objects.order_by("id").first()
+        classroom = Class.objects.by_code_or_first(opts["code"])
         if not classroom:
             self.stderr.write("No class found. Sign up first or pass --class CODE.")
             return
@@ -31,20 +37,7 @@ class Command(BaseCommand):
         count = 0
         for name in sorted(os.listdir(folder)):
             path = os.path.join(folder, name)
-            if not os.path.isfile(path):
-                continue
-            base, ext = os.path.splitext(name)
-            grapheme = base.strip().upper()[:8]
-            if not grapheme:
-                continue
-            obj, _ = GraphemeSound.objects.get_or_create(grapheme=grapheme, classroom=classroom)
-            obj.source = "custom"
-            with open(path, "rb") as fh:
-                raw = fh.read()
-            cleaned, out_ext = audio.clean_audio(raw, name)
-            obj.audio.save(f"{classroom.pk}_{grapheme.lower()}.{out_ext}", ContentFile(cleaned), save=True)
-            count += 1
-            self.stdout.write(self.style.SUCCESS(f"imported {grapheme}"))
-
+            if os.path.isfile(path) and self._import_file(classroom, path, name):
+                count += 1
         self.stdout.write(self.style.SUCCESS(
             f"imported {count} files into {classroom.name} ({classroom.code})"))
