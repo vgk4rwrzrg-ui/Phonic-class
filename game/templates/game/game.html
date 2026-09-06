@@ -54,6 +54,91 @@
           opacity:0; transform:translateY(6px); transition:opacity .25s, transform .25s; }
   #hint.show { opacity:1; transform:translateY(0); }
   .empty { color:#556; font-size:1.1rem; text-align:center; }
+
+  /* ---- Toasts ---- */
+  #toasts { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:100;
+            display:flex; flex-direction:column; gap:8px; align-items:center; pointer-events:none; }
+  .toast { background:#333; color:#fff; padding:12px 22px; border-radius:999px; font-weight:800;
+           font-size:1.05rem; box-shadow:0 4px 12px rgba(0,0,0,.3); animation:toastIn .3s ease-out; }
+  .toast.success { background:#2eaa5e; }
+  .toast.error   { background:#e08a3c; }
+  @keyframes toastIn { from { transform:translateY(-16px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+
+  /* ---- Balloon challenge ---- */
+  #balloonOverlay { position:fixed; inset:0; z-index:60; background:linear-gradient(#bfe3ff,#e8f6ff);
+                    touch-action:none; overflow:hidden; display:flex; flex-direction:column; }
+  #balloonOverlay[hidden] { display:none; }
+  .bo-top { text-align:center; padding:12px 10px 4px; z-index:2; }
+  .bo-title { font-size:1.35rem; font-weight:900; color:#2f7fe0; }
+  .bo-help { font-size:.95rem; font-weight:700; color:#567; margin-top:2px; }
+  #balloonSeq { display:flex; gap:10px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
+  #balloonSeq .seqchip { min-width:52px; height:52px; padding:0 10px; border-radius:14px; background:#fff;
+        border:3px solid #c8ddf5; display:flex; align-items:center; justify-content:center;
+        font-size:1.6rem; font-weight:900; color:#345; }
+  #balloonSeq .seqchip.done { border-color:#2eaa5e; background:#dff0e3; color:#1e7a3c; }
+  #balloonSeq .seqchip.done::after { content:" \2713"; font-size:1.1rem; }
+  #balloonSeq .seqchip.next { border-color:#f5a623; }
+  #balloonStage { position:relative; flex:1; }
+  .balloon { position:absolute; width:86px; height:106px; border:none; background:transparent;
+             cursor:pointer; padding:0; touch-action:none; }
+  .balloon:focus-visible { outline:4px solid #2f7fe0; outline-offset:4px; border-radius:50%; }
+  .balloon .bod { width:86px; height:96px; border-radius:50% 50% 48% 48%; display:flex;
+                  align-items:center; justify-content:center; font-size:2.1rem; font-weight:900;
+                  color:#fff; box-shadow:inset -8px -10px 0 rgba(0,0,0,.12); }
+  .balloon .str { width:2px; height:26px; background:rgba(0,0,0,.35); margin:0 auto; }
+  .balloon.wiggle { animation:shake .45s; }
+  .balloon .keyhint { position:absolute; top:-8px; right:-4px; background:#fff; border-radius:999px;
+                      font-size:.8rem; font-weight:800; color:#567; padding:1px 7px;
+                      box-shadow:0 1px 4px rgba(0,0,0,.25); }
+  #balloonMsg { text-align:center; min-height:1.6em; font-weight:800; color:#f5a623; padding-bottom:10px; z-index:2; }
+
+  /* ---- Boss fight ---- */
+  #bossOverlay { position:fixed; inset:0; z-index:60; background:linear-gradient(#2b2e4a,#4a4e78);
+                 touch-action:pan-y; overflow-y:auto; }
+  #bossOverlay[hidden] { display:none; }
+  .bz-wrap { max-width:560px; margin:0 auto; padding:16px 14px 40px; text-align:center; }
+  .bz-name { font-size:1.5rem; font-weight:900; color:#ffe45c; margin-top:4px; }
+  .bz-art { font-size:4.2rem; line-height:1; margin:6px 0; display:inline-block; }
+  .bz-art.bob { animation:bob 2.2s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-10px); } }
+  .bz-art.hit { animation:bosshit .5s; }
+  @keyframes bosshit { 20% { transform:translateX(-10px) rotate(-6deg); }
+                       60% { transform:translateX(10px) rotate(6deg); } 100% { transform:none; } }
+  .bz-hpwrap { background:rgba(255,255,255,.2); border-radius:999px; height:30px; margin:10px auto;
+               max-width:340px; overflow:hidden; position:relative; }
+  .bz-hpbar { background:linear-gradient(#a55ce0,#7b3fb5); height:100%; transition:width .5s; }
+  .bz-hptext { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+               color:#fff; font-weight:900; font-size:.95rem; }
+  .bz-story { color:#dfe4ff; font-weight:700; margin:8px 0; font-size:1.02rem; }
+  .bz-recovered { color:#ffe45c; font-weight:800; min-height:1.5em; margin:6px 0; font-size:.98rem; }
+  .bz-boxes, .bz-tiles { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:12px 0; }
+  .bz-box { width:64px; height:74px; border:3px dashed rgba(255,255,255,.5); border-radius:14px;
+            background:rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center;
+            font-size:2rem; font-weight:900; color:#7bff9e; }
+  .bz-box.filled { border-style:solid; border-color:#7bff9e; }
+  .bz-tile { width:64px; height:64px; border:none; border-radius:14px; color:#fff; font-size:1.9rem;
+             font-weight:900; cursor:pointer; box-shadow:0 4px 8px rgba(0,0,0,.35); touch-action:manipulation; }
+  .bz-tile:focus-visible { outline:4px solid #ffe45c; outline-offset:3px; }
+  .bz-tile[disabled] { opacity:.25; cursor:default; }
+  .bz-tile.shake { animation:shake .45s; }
+  .bz-msg { color:#ffd27b; font-weight:800; min-height:1.5em; margin:6px 0; }
+  .bz-victory { display:none; }
+  .bz-victory.show { display:block; animation:toastIn .4s; }
+  .bz-victory .vtitle { font-size:1.9rem; font-weight:900; color:#7bff9e; margin:10px 0; }
+  .bz-victory .vletters { font-size:2rem; letter-spacing:.2em; color:#ffe45c; font-weight:900;
+                          word-break:break-all; margin:8px 0; }
+  #bossResume { display:none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bz-art.bob, .toast, .tile.shake, .balloon.wiggle, .bz-art.hit { animation:none !important; }
+    * { transition-duration:.01s !important; }
+  }
+  @media (max-width:480px) {
+    .balloon { width:74px; height:94px; }
+    .balloon .bod { width:74px; height:84px; font-size:1.8rem; }
+    .bz-box { width:52px; height:62px; font-size:1.6rem; }
+    .bz-tile { width:56px; height:56px; font-size:1.6rem; }
+  }
 </style>
 
 <div class="topbar">
@@ -85,7 +170,49 @@
   <div class="cmsg" id="celebrateMsg"></div>
 </div></div>
 
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<div id="balloonOverlay" hidden>
+  <div class="bo-top">
+    <div class="bo-title">&#127880; Balloon Bonus!</div>
+    <div class="bo-help">Pop the balloons in order! Tap, click, or press the number keys.</div>
+    <div id="balloonSeq" aria-label="Target order"></div>
+  </div>
+  <div id="balloonStage" aria-label="Balloons"></div>
+  <div id="balloonMsg" aria-live="polite"></div>
+</div>
+
+<div id="bossOverlay" hidden>
+  <div class="bz-wrap">
+    <div id="bossBattle">
+      <div class="bz-name">Baron Blot</div>
+      <div class="bz-art bob" id="bossArt" aria-hidden="true">&#129399;&#128167;</div>
+      <div class="bz-story">Baron Blot has stolen the classroom letters!<br>Spell the words to win them back!</div>
+      <div class="bz-hpwrap" role="progressbar" aria-label="Baron Blot health"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="bossHpWrap">
+        <div class="bz-hpbar" id="bossHpBar" style="width:100%"></div>
+        <div class="bz-hptext" id="bossHpText"></div>
+      </div>
+      <div class="bz-recovered" id="bossRecovered" aria-live="polite"></div>
+      <button class="bigbtn" id="bossHear" type="button">&#128266; HEAR THE WORD</button>
+      <div class="bz-boxes" id="bossBoxes"></div>
+      <div class="bz-tiles" id="bossTiles"></div>
+      <div class="bz-msg" id="bossMsg" aria-live="polite"></div>
+    </div>
+    <div class="bz-victory" id="bossVictory">
+      <div class="bz-art" aria-hidden="true">&#127882;&#129399;&#127882;</div>
+      <div class="vtitle">You beat Baron Blot!</div>
+      <div class="bz-story">The stolen letters fly back to the classroom!</div>
+      <div class="vletters" id="victoryLetters"></div>
+      <div class="points" style="font-size:1.6rem;font-weight:900;color:#7bff9e;" id="victoryPoints"></div>
+      <button class="bigbtn" id="bossDone" type="button">Back to spelling! &#11088;</button>
+    </div>
+  </div>
+</div>
+
 {{ words|json_script:"words-data" }}
+{{ game_config|json_script:"game-config" }}
 <form style="display:none">{% csrf_token %}</form>
 
 {% verbatim %}
@@ -383,10 +510,24 @@ function checkWin() {
   var ov = document.getElementById('celebrate');
   ov.classList.add('show');
   confettiBurst();
+  // Track progress for balloon + boss features
+  var upper = w.text.toUpperCase();
+  if (progress.spelled.indexOf(upper) === -1) progress.spelled.push(upper);
+  progress.rounds++;
+  saveProgress(progress);
   setTimeout(function () {
     ov.classList.remove('show');
     wordIndex++;
-    setupRound();
+    // Boss first (never balloon right before a boss), then balloon, then normal play
+    if (CONFIG.boss_enabled && allWordsSpelled()) {
+      maybeStartBoss();
+      setupRound();
+    } else if (shouldTriggerBalloon() && startBalloonRound()) {
+      // balloon overlay is showing; setupRound resumes after it closes
+      setupRound();
+    } else {
+      setupRound();
+    }
   }, 2300);
 }
 
@@ -412,7 +553,413 @@ document.addEventListener('keydown', function (e) {
   if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=')) e.preventDefault();
 });
 
+
+/* ================= Toasts ================= */
+function showToast(message, type) {
+  var wrap = document.getElementById('toasts');
+  var el = document.createElement('div');
+  el.className = 'toast ' + (type || 'success');
+  el.textContent = (type === 'error' ? '\u26A0\uFE0F ' : '\u2B50 ') + message;
+  wrap.appendChild(el);
+  setTimeout(function () { el.remove(); }, 3200);
+}
+
+/* ================= Config & shared state ================= */
+var CONFIG = { balloon_enabled: true, balloon_frequency: 3, boss_enabled: true };
+try { CONFIG = JSON.parse(document.getElementById('game-config').textContent); } catch (e) {}
+var REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Words the kid has completed this session (uppercase), persisted so a
+// reload mid-session doesn't lose progress. Keyed by kid id so students
+// sharing a device never see each other's progress.
+var STORE_KEY = 'phonics_progress_' + (CONFIG.kid_id || 'anon');
+function loadProgress() {
+  try {
+    var raw = sessionStorage.getItem(STORE_KEY);
+    return raw ? JSON.parse(raw) : { spelled: [], rounds: 0, lastBonusRound: -99 };
+  } catch (e) { return { spelled: [], rounds: 0, lastBonusRound: -99 }; }
+}
+function saveProgress(p) {
+  try { sessionStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch (e) {}
+}
+var progress = loadProgress();
+
+function allWordsSpelled() {
+  if (!WORDS.length) return false;
+  var need = {};
+  WORDS.forEach(function (w) { need[w.text.toUpperCase()] = true; });
+  var have = {};
+  progress.spelled.forEach(function (w) { have[w] = true; });
+  return Object.keys(need).every(function (w) { return have[w]; });
+}
+
+/* ================= Balloon challenge ================= */
+var BALLOON_COLORS = ['#ff6b6b', '#4da3ff', '#26c281', '#f5a623', '#9b59d0', '#ee5a93'];
+var balloonState = null; // {seq:[], idx:0, balloons:[], raf:null, active:false, nonce:''}
+
+function learnedGraphemes() {
+  // Characters from words the learner has already spelled; fall back to
+  // graphemes of the active word list so the round is always playable.
+  var source = progress.spelled.length ? progress.spelled
+             : WORDS.map(function (w) { return w.text; });
+  var set = {};
+  source.forEach(function (word) {
+    wordToUnits(word).forEach(function (u) { set[u.g] = true; });
+  });
+  return Object.keys(set);
+}
+
+function shouldTriggerBalloon() {
+  if (!CONFIG.balloon_enabled || !CONFIG.balloon_frequency) return false;
+  if (progress.rounds - progress.lastBonusRound < 2) return false;      // never twice in a row
+  if (allWordsSpelled() && CONFIG.boss_enabled) return false;           // never right before a boss
+  return progress.rounds > 0 && progress.rounds % CONFIG.balloon_frequency === 0;
+}
+
+function balloonDifficulty() { return progress.rounds >= CONFIG.balloon_frequency * 3 ? 3 : 2; }
+
+function startBalloonRound() {
+  var pool = learnedGraphemes();
+  if (pool.length < 2) return false;
+  var count = Math.min(balloonDifficulty(), pool.length);
+  shuffle(pool);
+  var seq = pool.slice(0, count);
+  balloonState = {
+    seq: seq, idx: 0, balloons: [], raf: null, active: true,
+    nonce: 'b' + Date.now() + '-' + Math.floor(Math.random() * 1e6)
+  };
+  var overlay = document.getElementById('balloonOverlay');
+  overlay.hidden = false;
+  renderBalloonSeq();
+  var stage = document.getElementById('balloonStage');
+  stage.innerHTML = '';
+  var order = seq.slice(); shuffle(order);
+  order.forEach(function (g, i) { spawnBalloon(g, i, count); });
+  speak('Pop the balloons in order!', { cancel: true });
+  balloonLoop();
+  return true;
+}
+
+function renderBalloonSeq() {
+  var el = document.getElementById('balloonSeq');
+  el.innerHTML = '';
+  balloonState.seq.forEach(function (g, i) {
+    var chip = document.createElement('div');
+    chip.className = 'seqchip' + (i < balloonState.idx ? ' done' : (i === balloonState.idx ? ' next' : ''));
+    chip.textContent = g;
+    el.appendChild(chip);
+  });
+}
+
+function spawnBalloon(g, i, count) {
+  var stage = document.getElementById('balloonStage');
+  var el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'balloon';
+  el.setAttribute('aria-label', 'Balloon with letter ' + g + '. Press ' + (i + 1) + ' to pop.');
+  var color = BALLOON_COLORS[Math.floor(Math.random() * BALLOON_COLORS.length)];
+  el.innerHTML = '<span class="keyhint">' + (i + 1) + '</span>' +
+    '<span class="bod" style="background:linear-gradient(' + color + ',' + color + 'cc)">' + g + '</span>' +
+    '<span class="str"></span>';
+  var W = stage.clientWidth || window.innerWidth;
+  var b = {
+    el: el, g: g,
+    x: 30 + Math.random() * Math.max(60, W - 150),
+    y: (stage.clientHeight || 400) + 60 + Math.random() * 200,
+    vy: REDUCED_MOTION ? 0.35 : (0.5 + Math.random() * (balloonDifficulty() === 3 ? 0.9 : 0.5)),
+    sway: 14 + Math.random() * 22,
+    phase: Math.random() * Math.PI * 2
+  };
+  el.addEventListener('click', function () { popAttempt(b); });
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); popAttempt(b); }
+  });
+  stage.appendChild(el);
+  balloonState.balloons.push(b);
+}
+
+function balloonLoop() {
+  if (!balloonState || !balloonState.active) return;
+  var stage = document.getElementById('balloonStage');
+  var H = stage.clientHeight || 400;
+  var W = stage.clientWidth || window.innerWidth;
+  balloonState.balloons.forEach(function (b) {
+    if (b.popped) return;
+    b.y -= b.vy;
+    b.phase += 0.02;
+    var sx = b.x + Math.sin(b.phase) * b.sway;
+    if (b.y < -120) { // escaped: respawn at the bottom so the round stays winnable
+      b.y = H + 80;
+      b.x = 30 + Math.random() * Math.max(60, W - 150);
+    }
+    b.el.style.transform = 'translate(' + sx + 'px,' + b.y + 'px)';
+  });
+  balloonState.raf = requestAnimationFrame(balloonLoop);
+}
+
+function popAttempt(b) {
+  if (!balloonState || !balloonState.active || b.popped) return;
+  var expected = balloonState.seq[balloonState.idx];
+  if (b.g === expected) {
+    b.popped = true;
+    b.el.remove();
+    vibrate(20);
+    playUnit({ letter: b.g, sound: b.g.toLowerCase() });
+    balloonState.idx++;
+    renderBalloonSeq();
+    if (balloonState.idx >= balloonState.seq.length) finishBalloonRound();
+  } else {
+    vibrate([30, 40, 30]);
+    b.el.classList.add('wiggle');
+    b.el.addEventListener('animationend', function () { b.el.classList.remove('wiggle'); }, { once: true });
+    var msg = document.getElementById('balloonMsg');
+    msg.textContent = 'Not that one \u2014 find ' + expected + '!';
+    speak('Try the ' + expected.toLowerCase() + ' balloon!', { cancel: true });
+    setTimeout(function () { msg.textContent = ''; }, 1800);
+  }
+}
+
+function finishBalloonRound() {
+  balloonState.active = false;
+  if (balloonState.raf) cancelAnimationFrame(balloonState.raf);
+  progress.lastBonusRound = progress.rounds;
+  saveProgress(progress);
+  api('/api/balloon/complete/', { nonce: balloonState.nonce }).then(function (res) {
+    if (res && res.ok) {
+      document.getElementById('score').textContent = res.points_week;
+      if (!res.duplicate) showToast('+5 balloon points!');
+    } else if (res === null) {
+      showToast('Could not save your points \u2014 check your connection.', 'error');
+    }
+    closeBalloonOverlay();
+  });
+}
+
+function closeBalloonOverlay() {
+  document.getElementById('balloonOverlay').hidden = true;
+  document.getElementById('balloonStage').innerHTML = '';
+  balloonState = null;
+  confettiBurst();
+  setTimeout(maybeStartBoss, 400);
+}
+
+// Keyboard: number keys pop the numbered balloon
+document.addEventListener('keydown', function (e) {
+  if (!balloonState || !balloonState.active) return;
+  var n = parseInt(e.key, 10);
+  if (n >= 1 && n <= balloonState.balloons.length) {
+    popAttempt(balloonState.balloons[n - 1]);
+  }
+});
+
+/* ================= Boss fight: Baron Blot ================= */
+var bossState = null; // {fightId, hp, maxHp, spelled:[], queue:[], word, tiles, boxIdx, busy}
+
+function maybeStartBoss() {
+  if (!CONFIG.boss_enabled || !WORDS.length) return;
+  if (!allWordsSpelled()) return;
+  if (bossState) return;
+  // Server-side eligibility check; never trust local state alone.
+  api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (res) {
+    if (!res) { showToast('Could not reach the game server.', 'error'); return; }
+    if (!res.ok || !res.eligible) return;   // not eligible (or already handled) - keep playing
+    openBoss(res);
+  });
+}
+
+function openBoss(res) {
+  var spelled = res.words_spelled || [];
+  var queue = WORDS.map(function (w) { return w.text.toUpperCase(); })
+      .filter(function (w) { return spelled.indexOf(w) === -1; });
+  shuffle(queue);
+  bossState = {
+    fightId: res.fight_id, hp: res.boss_hp, maxHp: res.boss_max_hp,
+    spelled: spelled.slice(), queue: queue, busy: false,
+    replay: !!res.completed, rewardClaimed: !!res.reward_claimed
+  };
+  document.getElementById('bossOverlay').hidden = false;
+  document.getElementById('bossVictory').classList.remove('show');
+  document.getElementById('bossBattle').style.display = '';
+  updateBossHp();
+  updateBossRecovered();
+  if (bossState.hp === 0) { bossVictory(); return; }
+  speak('Baron Blot has stolen the letters! Spell the words to win them back!', { cancel: true });
+  nextBossWord();
+}
+
+function updateBossHp() {
+  var pct = bossState.maxHp ? Math.round(100 * bossState.hp / bossState.maxHp) : 0;
+  document.getElementById('bossHpBar').style.width = pct + '%';
+  document.getElementById('bossHpText').textContent = bossState.hp + ' / ' + bossState.maxHp;
+  var wrap = document.getElementById('bossHpWrap');
+  wrap.setAttribute('aria-valuenow', pct);
+}
+
+function updateBossRecovered() {
+  var el = document.getElementById('bossRecovered');
+  el.textContent = bossState.spelled.length
+    ? 'Letters won back: ' + bossState.spelled.join(' \u2022 ')
+    : 'No letters recovered yet \u2014 you can do it!';
+}
+
+function nextBossWord() {
+  if (!bossState.queue.length) { return; }
+  bossState.word = bossState.queue[0];
+  var units = wordToUnits(bossState.word);
+  bossState.units = units;
+  bossState.boxIdx = 0;
+  var boxes = document.getElementById('bossBoxes');
+  var tilesEl = document.getElementById('bossTiles');
+  boxes.innerHTML = ''; tilesEl.innerHTML = '';
+  units.forEach(function () {
+    var b = document.createElement('div');
+    b.className = 'bz-box';
+    boxes.appendChild(b);
+  });
+  var order = units.map(function (u, i) { return { g: u.g, sound: u.sound, i: i }; });
+  do { shuffle(order); }
+  while (order.length > 1 && order.every(function (o, i) { return o.i === i; }));
+  order.forEach(function (o) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bz-tile';
+    btn.textContent = o.g;
+    btn.setAttribute('aria-label', 'Letter ' + o.g);
+    var c = TILE_COLORS[o.i % TILE_COLORS.length];
+    btn.style.background = 'linear-gradient(' + c + ',' + c + 'cc)';
+    btn.addEventListener('click', function () { bossTileTap(btn, o); });
+    tilesEl.appendChild(btn);
+  });
+  playWord({ text: bossState.word });
+}
+
+function bossTileTap(btn, o) {
+  if (!bossState || bossState.busy || btn.disabled) return;
+  var expected = bossState.units[bossState.boxIdx];
+  if (o.g === expected.g && o.i === bossState.boxIdx) {
+    btn.disabled = true;
+    var box = document.getElementById('bossBoxes').children[bossState.boxIdx];
+    box.textContent = o.g;
+    box.classList.add('filled');
+    playUnit({ letter: o.g, sound: o.sound });
+    vibrate(20);
+    bossState.boxIdx++;
+    if (bossState.boxIdx >= bossState.units.length) bossWordComplete();
+  } else {
+    vibrate([30, 40, 30]);
+    btn.classList.add('shake');
+    btn.addEventListener('animationend', function () { btn.classList.remove('shake'); }, { once: true });
+    var msg = document.getElementById('bossMsg');
+    msg.textContent = 'Baron Blot giggles \u2014 but you can try again!';
+    speak('Try again \u2014 listen to the word!', { cancel: true });
+    setTimeout(function () { msg.textContent = ''; }, 2000);
+  }
+}
+
+function bossWordComplete() {
+  if (bossState.busy) return;
+  bossState.busy = true;
+  var word = bossState.word;
+  api('/api/boss/spell/', { fight_id: bossState.fightId, word: word }).then(function (res) {
+    bossState.busy = false;
+    if (!res) {
+      showToast('Connection hiccup \u2014 let\u2019s try that word again!', 'error');
+      nextBossWord();
+      return;
+    }
+    if (!res.ok) { showToast(res.error || 'Something went wrong', 'error'); return; }
+    bossState.hp = res.boss_hp;
+    bossState.spelled = res.words_spelled || bossState.spelled;
+    bossState.queue = bossState.queue.filter(function (w) { return w !== word; });
+    var art = document.getElementById('bossArt');
+    art.classList.remove('hit'); void art.offsetWidth; art.classList.add('hit');
+    updateBossHp();
+    updateBossRecovered();
+    speak('Take that, Baron Blot!', { cancel: true });
+    if (res.completed || bossState.hp === 0) {
+      setTimeout(bossVictory, 700);
+    } else if (bossState.queue.length) {
+      setTimeout(nextBossWord, 900);
+    } else {
+      // Teacher added words mid-fight: refresh from server status
+      api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (r2) {
+        if (r2 && r2.ok && r2.eligible) { openBossRefresh(r2); }
+        else { closeBoss(); showToast('The word list changed \u2014 keep spelling!', 'error'); }
+      });
+    }
+  });
+}
+
+function openBossRefresh(res) {
+  bossState.fightId = res.fight_id;
+  bossState.hp = res.boss_hp;
+  bossState.maxHp = res.boss_max_hp;
+  bossState.spelled = res.words_spelled || [];
+  bossState.queue = WORDS.map(function (w) { return w.text.toUpperCase(); })
+      .filter(function (w) { return bossState.spelled.indexOf(w) === -1; });
+  shuffle(bossState.queue);
+  updateBossHp(); updateBossRecovered();
+  if (bossState.hp === 0) bossVictory(); else nextBossWord();
+}
+
+var victoryRequested = false;
+function bossVictory() {
+  document.getElementById('bossBattle').style.display = 'none';
+  var v = document.getElementById('bossVictory');
+  v.classList.add('show');
+  var letters = [];
+  bossState.spelled.forEach(function (w) { letters.push(w); });
+  document.getElementById('victoryLetters').textContent = letters.join(' \u2B50 ');
+  confettiBurst();
+  speak('You beat Baron Blot! The letters are safe!', { cancel: true });
+  if (victoryRequested) return;
+  victoryRequested = true;
+  api('/api/boss/victory/', { fight_id: bossState.fightId }).then(function (res) {
+    victoryRequested = false;
+    if (!res) {
+      showToast('Could not save your victory \u2014 check your connection.', 'error');
+      document.getElementById('victoryPoints').textContent = '';
+      return;
+    }
+    if (res.ok && !res.duplicate) {
+      document.getElementById('score').textContent = res.points_week;
+      document.getElementById('victoryPoints').textContent = '+50 points!';
+      showToast('+50 points for beating Baron Blot!');
+    } else if (res.ok && res.duplicate) {
+      document.getElementById('victoryPoints').textContent = 'Great practice!';
+    }
+  });
+}
+
+function closeBoss() {
+  document.getElementById('bossOverlay').hidden = true;
+  bossState = null;
+}
+
+document.getElementById('bossDone').addEventListener('click', function () {
+  closeBoss();
+  setupRound();
+});
+document.getElementById('bossHear').addEventListener('click', function () {
+  if (bossState && bossState.word) playWord({ text: bossState.word });
+});
+
+// Reload recovery: if a fight is mid-way on the server, resume it.
+function checkBossResume() {
+  if (!CONFIG.boss_enabled) return;
+  fetch('/api/boss/status/').then(function (r) { return r.json(); }).then(function (res) {
+    if (!res || !res.ok || !res.fight) return;
+    var f = res.fight;
+    if (f.boss_hp > 0 && !f.completed) {
+      openBoss({ fight_id: f.fight_id, boss_hp: f.boss_hp, boss_max_hp: f.boss_max_hp,
+                 words_spelled: f.words_spelled || [], completed: f.completed,
+                 reward_claimed: f.reward_claimed, eligible: true, ok: true });
+    }
+  }).catch(function () {});
+}
+
 setupRound();
+checkBossResume();
 </script>
 {% endverbatim %}
 {% endblock %}
