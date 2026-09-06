@@ -176,6 +176,25 @@ class BossEligibilityTests(TestCase):
         self.assertEqual(BossFight.objects.filter(kid=self.kid).count(), 1)
 
 
+    def test_not_eligible_again_after_victory(self):
+        """Once beaten, Baron Blot stays beaten until the word list changes."""
+        # Win a full fight
+        resp = _post_json(self.client, "/api/boss/eligible/",
+                          {"words_spelled": ["CAT", "DOG", "HAT"]})
+        fight_id = resp.json()["fight_id"]
+        for w in ["CAT", "DOG", "HAT"]:
+            _post_json(self.client, "/api/boss/spell/", {"fight_id": fight_id, "word": w})
+        _post_json(self.client, "/api/boss/victory/", {"fight_id": fight_id})
+        self.assertTrue(BossFight.objects.get(pk=fight_id).completed)
+        # Spelling more words must NOT re-trigger the boss
+        resp2 = _post_json(self.client, "/api/boss/eligible/",
+                           {"words_spelled": ["CAT", "DOG", "HAT"]})
+        data = resp2.json()
+        self.assertTrue(data["ok"])
+        self.assertFalse(data["eligible"])
+        self.assertEqual(data.get("reason"), "already_beaten")
+
+
 class BossSpellTests(TestCase):
     """Correct spellings reduce HP; incorrect do not."""
 

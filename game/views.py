@@ -574,6 +574,8 @@ def _get_or_create_boss(kid, classroom):
 
     # Look up existing fight for this version
     fight = BossFight.objects.filter(kid=kid, word_list_version=version).first()
+    if fight and fight.completed:
+        return fight, False, "already_beaten"
     if fight:
         return fight, True, "existing"
 
@@ -612,6 +614,10 @@ def api_boss_eligible(request):
 
     # Check if there's already a fight for this version
     fight = BossFight.objects.filter(kid=kid, word_list_version=version).first()
+    if fight and fight.completed:
+        # Baron Blot is already beaten for this word list.  No rematch until
+        # the teacher changes the active words (new version = new fight).
+        return JsonResponse({"ok": True, "eligible": False, "reason": "already_beaten"})
     if fight:
         return JsonResponse({
             "ok": True,

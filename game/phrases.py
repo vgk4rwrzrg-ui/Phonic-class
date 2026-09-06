@@ -26,6 +26,7 @@ HINTS = [
 
 GAME_LINES = [
     "Pop the balloons in order!",
+    "Pop the balloons to spell the word!",
     "Baron Blot has stolen the letters! Spell the words to win them back!",
     "Try again — listen to the word!",
     "Take that, Baron Blot!",
