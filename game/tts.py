@@ -109,3 +109,23 @@ def synthesize_phrase(text):
         input=synthesis_input, voice=voice, audio_config=audio_config
     )
     return response.audio_content
+
+
+def synthesize_creature(text, language_code, voice_name, pitch, rate):
+    """Return MP3 bytes of a gibberish creature phrase in a squeaky voice."""
+    from google.cloud import texttospeech
+
+    client = texttospeech.TextToSpeechClient()
+    synthesis_input = texttospeech.SynthesisInput(text=(text or "").strip())
+    voice = texttospeech.VoiceSelectionParams(
+        language_code=language_code, name=voice_name
+    )
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        pitch=float(pitch),          # semitones up = small-creature squeak
+        speaking_rate=float(rate),
+    )
+    response = client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+    return response.audio_content

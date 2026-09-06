@@ -237,6 +237,17 @@
       <input type="checkbox" id="bossEnabled" {% if classroom.boss_enabled %}checked{% endif %}>
       Baron Blot boss fight on
     </label>
+    <label style="display:block;margin:8px 0;">
+      <input type="checkbox" id="petsEnabled" {% if classroom.pets_enabled %}checked{% endif %}>
+      Pet egg shop on
+    </label>
+    <label style="display:block;margin:8px 0;">
+      Egg cost
+      <input type="number" id="eggCost" min="5" max="5000"
+             value="{{ classroom.egg_cost }}" style="width:90px;"
+             aria-label="Pet egg cost in points">
+      points
+    </label>
     <button type="submit">Save bonus settings</button>
   </form>
 
@@ -649,7 +660,9 @@ if (bonusForm) {
       body: JSON.stringify({
         balloon_enabled: document.getElementById('balloonEnabled').checked,
         balloon_frequency: document.getElementById('balloonFrequency').value,
-        boss_enabled: document.getElementById('bossEnabled').checked
+        boss_enabled: document.getElementById('bossEnabled').checked,
+        pets_enabled: document.getElementById('petsEnabled').checked,
+        egg_cost: document.getElementById('eggCost').value
       })
     })
     .then(function (r) { return r.json(); })

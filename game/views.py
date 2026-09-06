@@ -13,7 +13,7 @@ from django.views.decorators.http import require_POST
 
 from . import audio, tts
 from .forms import TeacherSignupForm
-from .models import Class, GraphemeSound, Kid, SoundMiss, Word, WordSound
+from .models import Class, GraphemeSound, Kid, Pet, SoundMiss, Word, WordSound
 
 mimetypes.add_type("audio/mpeg", ".mp3")
 mimetypes.add_type("audio/wav", ".wav")
@@ -151,11 +151,18 @@ def game(request):
         return redirect("picker")
     cr = kid.classroom
     words = list(cr.words.filter(active=True).values("text", "level"))
+    companion = None
+    if cr.pets_enabled:
+        p = kid.pets.filter(is_companion=True, hatched=True).first()
+        if p:
+            companion = {"id": p.pk, "name": p.name,
+                         "image_url": f"/petimage/{p.pk}/"}
     game_config = {
         "balloon_enabled": cr.balloon_enabled,
         "balloon_frequency": cr.balloon_frequency,
         "boss_enabled": cr.boss_enabled,
         "kid_id": kid.pk,
+        "companion": companion,
     }
     return render(request, "game/game.html",
                   {"kid": kid, "words": words, "classroom": cr,
@@ -914,6 +921,239 @@ def api_teacher_settings(request):
     if "boss_enabled" in data:
         cr.boss_enabled = bool(data["boss_enabled"])
         changed.append("boss_enabled")
+    if "pets_enabled" in data:
+        cr.pets_enabled = bool(data["pets_enabled"])
+        changed.append("pets_enabled")
+    if "egg_cost" in data:
+        try:
+            cr.egg_cost = max(5, min(5000, int(data["egg_cost"])))
+            changed.append("egg_cost")
+        except (TypeError, ValueError):
+            return JsonResponse({"success": False, "message": "Invalid egg cost"})
     if changed:
         cr.save(update_fields=changed)
     return JsonResponse({"success": True, "message": "Settings saved"})
+
+
+# ============================================================================
+# Pet egg shop
+# ============================================================================
+
+from . import pets as petgen  # noqa: E402
+
+
+def _spendable(kid):
+    return max(0, kid.points_total - kid.points_spent)
+
+
+def _pet_dict(p):
+    return {
+        "id": p.pk,
+        "name": p.name,
+        "hatched": p.hatched,
+        "is_companion": p.is_companion,
+        "traits": json.loads(p.traits_json),
+        "phrases": json.loads(p.phrases_json),
+        "image_url": f"/petimage/{p.pk}/" if p.hatched and p.image_path else None,
+    }
+
+
+def pet_area(request):
+    """Kid-facing pet page: buy eggs, hatch, collect, pick a companion."""
+    kid = get_kid(request)
+    if not kid:
+        return redirect("picker")
+    cr = kid.classroom
+    if not cr.pets_enabled:
+        return redirect("game")
+    return render(request, "game/pets.html", {
+        "kid": kid,
+        "classroom": cr,
+        "spendable": _spendable(kid),
+        "egg_cost": cr.egg_cost,
+        "pets": kid.pets.all(),
+    })
+
+
+@require_POST
+def api_pet_buy(request):
+    """Buy one egg.  Deducts egg_cost from spendable points.  Idempotent via nonce."""
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    cr = kid.classroom
+    if not cr.pets_enabled:
+        return JsonResponse({"ok": False, "error": "pets disabled"}, status=403)
+
+    data = _json_body(request)
+    nonce = str(data.get("nonce", ""))[:64]
+    session_key = f"egg_nonce_{kid.pk}_{nonce}"
+    if nonce and request.session.get(session_key):
+        pet_id = request.session[session_key]
+        pet = Pet.objects.filter(pk=pet_id, kid=kid).first()
+        return JsonResponse({"ok": True, "duplicate": True,
+                             "pet": _pet_dict(pet) if pet else None,
+                             "spendable": _spendable(kid)})
+
+    from django.db import transaction
+    with transaction.atomic():
+        locked = Kid.objects.select_for_update().get(pk=kid.pk)
+        if max(0, locked.points_total - locked.points_spent) < cr.egg_cost:
+            return JsonResponse(
+                {"ok": False, "error": "not_enough_points",
+                 "spendable": max(0, locked.points_total - locked.points_spent),
+                 "egg_cost": cr.egg_cost}, status=400)
+        locked.points_spent += cr.egg_cost
+        locked.save()
+
+        bp = petgen.new_pet_blueprint()
+        pet = Pet.objects.create(
+            kid=locked,
+            name=bp["name"],
+            traits_json=json.dumps(bp["traits"]),
+            prompt=bp["prompt"],
+            phrases_json=json.dumps(bp["phrases"]),
+            voice_json=json.dumps(bp["voice"]),
+        )
+    if nonce:
+        request.session[session_key] = pet.pk
+    return JsonResponse({"ok": True, "pet": _pet_dict(pet),
+                         "spendable": _spendable(pet.kid)})
+
+
+def _deepai_generate(prompt):
+    """Call DeepAI text2img; return raw image bytes.  Raises on any failure."""
+    import requests as rq
+
+    api_key = os.environ.get("DEEPAI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("no_api_key")
+    resp = rq.post(
+        "https://api.deepai.org/api/text2img",
+        data={"text": prompt, "image_generator_version": "standard",
+              "width": str(petgen.IMAGE_SIZE), "height": str(petgen.IMAGE_SIZE)},
+        headers={"api-key": api_key},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    url = resp.json().get("output_url")
+    if not url:
+        raise RuntimeError("no_output_url")
+    img = rq.get(url, timeout=60)
+    img.raise_for_status()
+    return img.content
+
+
+def _save_pet_image(pet, raw_bytes):
+    """Normalize to exactly 512x512 PNG and store under MEDIA_ROOT/pets/."""
+    import io
+    from PIL import Image
+    from django.conf import settings
+
+    im = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+    im = im.resize((petgen.IMAGE_SIZE, petgen.IMAGE_SIZE), Image.LANCZOS)
+    rel = f"pets/pet_{pet.pk}.png"
+    path = os.path.join(settings.MEDIA_ROOT, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    im.save(path, "PNG")
+    return rel
+
+
+@require_POST
+def api_pet_hatch(request, pet_id):
+    """Generate the pet image via DeepAI.  Idempotent: re-posts return the image."""
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    pet = Pet.objects.filter(pk=pet_id, kid=kid).first()
+    if not pet:
+        return JsonResponse({"ok": False, "error": "not found"}, status=404)
+    if pet.hatched:
+        return JsonResponse({"ok": True, "duplicate": True, "pet": _pet_dict(pet)})
+
+    try:
+        raw = _deepai_generate(pet.prompt)
+    except RuntimeError as e:
+        if str(e) == "no_api_key":
+            return JsonResponse(
+                {"ok": False, "error":
+                 "Image maker is not set up yet - ask your teacher!"}, status=503)
+        return JsonResponse({"ok": False, "error":
+                             "The egg is not ready - try again soon!"}, status=502)
+    except Exception:
+        return JsonResponse({"ok": False, "error":
+                             "The egg is not ready - try again soon!"}, status=502)
+
+    pet.image_path = _save_pet_image(pet, raw)
+    pet.hatched = True
+    pet.save()
+    return JsonResponse({"ok": True, "pet": _pet_dict(pet)})
+
+
+@require_POST
+def api_pet_companion(request, pet_id):
+    """Choose which hatched pet comes along on the spelling quest."""
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    pet = Pet.objects.filter(pk=pet_id, kid=kid, hatched=True).first()
+    if not pet:
+        return JsonResponse({"ok": False, "error": "not found"}, status=404)
+    kid.pets.update(is_companion=False)
+    pet.is_companion = True
+    pet.save()
+    return JsonResponse({"ok": True, "pet": _pet_dict(pet)})
+
+
+def pet_image(request, pet_id):
+    """Serve a pet image (owner or their teacher only)."""
+    from django.conf import settings
+
+    pet = Pet.objects.filter(pk=pet_id).select_related("kid__classroom").first()
+    if not pet or not pet.hatched or not pet.image_path:
+        return JsonResponse({"error": "not found"}, status=404)
+    kid = get_kid(request)
+    allowed = (kid and kid.classroom_id == pet.kid.classroom_id) or (
+        request.user.is_authenticated
+        and pet.kid.classroom.teacher_id == request.user.pk)
+    if not allowed:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    path = os.path.join(settings.MEDIA_ROOT, pet.image_path)
+    if not os.path.exists(path):
+        return JsonResponse({"error": "not found"}, status=404)
+    return FileResponse(open(path, "rb"), content_type="image/png")
+
+
+def pet_sound(request, pet_id, idx):
+    """Serve (generating+caching on first use) creature phrase #idx (0-4)."""
+    from django.conf import settings
+
+    pet = Pet.objects.filter(pk=pet_id).select_related("kid__classroom").first()
+    if not pet:
+        return JsonResponse({"error": "not found"}, status=404)
+    kid = get_kid(request)
+    allowed = (kid and kid.classroom_id == pet.kid.classroom_id) or (
+        request.user.is_authenticated
+        and pet.kid.classroom.teacher_id == request.user.pk)
+    if not allowed:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    phrases = json.loads(pet.phrases_json)
+    idx = int(idx)
+    if not 0 <= idx < len(phrases):
+        return JsonResponse({"error": "not found"}, status=404)
+
+    rel = f"petvoices/pet_{pet.pk}_{idx}.mp3"
+    path = os.path.join(settings.MEDIA_ROOT, rel)
+    if not os.path.exists(path):
+        voice = json.loads(pet.voice_json)
+        try:
+            audio_bytes = tts.synthesize_creature(
+                phrases[idx], voice["language_code"], voice["voice_name"],
+                voice["pitch"], voice["rate"])
+        except Exception:
+            return JsonResponse({"error": "tts unavailable"}, status=404)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(audio_bytes)
+    return FileResponse(open(path, "rb"), content_type="audio/mpeg")

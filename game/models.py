@@ -36,6 +36,12 @@ class Class(models.Model):
     # Boss fight settings
     boss_enabled = models.BooleanField(default=True)
 
+    # Pet egg shop settings
+    pets_enabled = models.BooleanField(default=True)
+    egg_cost = models.PositiveIntegerField(
+        default=50, help_text="Points needed to buy one pet egg."
+    )
+
     class Meta:
         verbose_name_plural = "classes"
         ordering = ["name"]
@@ -60,6 +66,7 @@ class Kid(models.Model):
     points_total = models.PositiveIntegerField(default=0)
     points_week = models.PositiveIntegerField(default=0)
     streak = models.PositiveIntegerField(default=0)
+    points_spent = models.PositiveIntegerField(default=0)
     last_played = models.DateField(null=True, blank=True)
 
     class Meta:
@@ -181,3 +188,31 @@ class BossFight(models.Model):
         s.add(upper)
         self.words_spelled = ",".join(sorted(s))
         return True
+
+
+class Pet(models.Model):
+    """A collectible pet bought with points.
+
+    Created as an un-hatched egg with 42 random traits; hatching calls the
+    DeepAI image API with a kid-safe grounded prompt and stores a 512x512
+    image under MEDIA_ROOT/pets/.  Each pet has a fixed creature voice
+    (Google TTS language/voice/pitch/rate) and five short gibberish phrases.
+    """
+
+    kid = models.ForeignKey(Kid, on_delete=models.CASCADE, related_name="pets")
+    name = models.CharField(max_length=30)
+    traits_json = models.TextField()          # dict of the 42 traits
+    prompt = models.TextField()               # exact prompt sent to DeepAI
+    phrases_json = models.TextField()         # list of 5 creature phrases
+    voice_json = models.TextField()           # language/voice/pitch/rate
+    hatched = models.BooleanField(default=False)
+    image_path = models.CharField(max_length=200, blank=True, default="")
+    is_companion = models.BooleanField(default=False)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created"]
+
+    def __str__(self):
+        state = "hatched" if self.hatched else "egg"
+        return f"{self.name} ({state}) - {self.kid.name}"

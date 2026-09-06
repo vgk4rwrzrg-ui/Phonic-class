@@ -35,6 +35,15 @@ urlpatterns = [
     path("wordsound/<str:word>/", views.word_sound, name="word_sound"),
     path("phrase/<slug:slug>/", views.phrase_sound, name="phrase_sound"),
 
+    # Pet egg shop
+    path("pets/", views.pet_area, name="pet_area"),
+    path("api/pet/buy/", views.api_pet_buy, name="api_pet_buy"),
+    path("api/pet/hatch/<int:pet_id>/", views.api_pet_hatch, name="api_pet_hatch"),
+    path("api/pet/companion/<int:pet_id>/", views.api_pet_companion,
+         name="api_pet_companion"),
+    path("petimage/<int:pet_id>/", views.pet_image, name="pet_image"),
+    path("petsound/<int:pet_id>/<int:idx>/", views.pet_sound, name="pet_sound"),
+
     # Teacher
     path("teacher/", views.dashboard, name="dashboard"),
     path("teacher/record/", views.teacher_record, name="teacher_record"),

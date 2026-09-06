@@ -1,0 +1,163 @@
+{% extends "game/base.html" %}
+{% block title %}My Pets - Phonics Class{% endblock %}
+{% block content %}
+<style>
+  .pet-wrap { max-width: 760px; margin: 0 auto; padding: 12px; }
+  .pet-top { display:flex; align-items:center; justify-content:space-between;
+             flex-wrap:wrap; gap:10px; }
+  .pet-points { font-size:1.3rem; font-weight:800; background:#fff7d6;
+                border-radius:14px; padding:10px 16px; }
+  .buy-btn { font-size:1.25rem; font-weight:800; padding:14px 22px;
+             border:none; border-radius:16px; background:#7c4dff; color:#fff;
+             cursor:pointer; min-height:56px; }
+  .buy-btn:disabled { background:#c5b3f2; cursor:not-allowed; }
+  .pet-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+              gap:14px; margin-top:18px; }
+  .pet-card { background:#fff; border-radius:18px; padding:14px; text-align:center;
+              box-shadow:0 3px 10px rgba(0,0,0,.08); }
+  .pet-card.companion { outline:4px solid #ffd54f; }
+  .pet-img { width:100%; max-width:220px; aspect-ratio:1/1; border-radius:14px;
+             background:#f2ecff; object-fit:cover; }
+  .egg-face { font-size:5.5rem; line-height:1.6; }
+  .pet-name { font-size:1.25rem; font-weight:800; margin:6px 0 2px; }
+  .pet-sub { color:#7a7a8c; font-size:.9rem; margin-bottom:8px; }
+  .pet-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .pet-actions button { border:none; border-radius:12px; padding:10px 14px;
+             font-weight:700; font-size:1rem; cursor:pointer; min-height:44px; }
+  .hatch-btn { background:#ffb300; color:#5b3a00; }
+  .talk-btn { background:#e3f2fd; }
+  .comp-btn { background:#c8e6c9; }
+  .hatching { animation: wobble .5s infinite; display:inline-block; }
+  @keyframes wobble { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(6deg)} }
+  @media (prefers-reduced-motion: reduce) { .hatching { animation:none; } }
+  #toasts { position:fixed; top:10px; left:50%; transform:translateX(-50%);
+            z-index:999; display:flex; flex-direction:column; gap:8px;
+            padding-top:env(safe-area-inset-top); }
+  .toast { background:#323248; color:#fff; padding:12px 20px; border-radius:999px;
+           font-size:1.15rem; font-weight:700; border:2px solid #fff;
+           box-shadow:0 4px 14px rgba(0,0,0,.25); }
+  .toast.err { background:#c62828; }
+</style>
+
+<form style="display:none">{% csrf_token %}</form>
+<div id="toasts" aria-live="polite"></div>
+
+<div class="pet-wrap">
+  <div class="pet-top">
+    <a class="btn" href="{% url 'game' %}">&larr; Back to game</a>
+    <div class="pet-points">&#11088; <span id="spendable">{{ spendable }}</span> points</div>
+    <button class="buy-btn" id="buyBtn">&#129370; Buy egg ({{ egg_cost }} pts)</button>
+  </div>
+
+  <h1 style="margin:18px 0 4px;">&#128012; {{ kid.icon }} {{ kid.name }}'s Pets</h1>
+  <p class="pet-sub">Buy an egg, tap it to hatch, then tap your pet to hear it talk!
+     Pick one buddy to join your spelling quest.</p>
+
+  <div class="pet-grid" id="petGrid">
+    {% for p in pets %}
+    <div class="pet-card {% if p.is_companion %}companion{% endif %}" data-id="{{ p.pk }}">
+      {% if p.hatched %}
+        <img class="pet-img" src="/petimage/{{ p.pk }}/" alt="{{ p.name }}">
+        <div class="pet-name">{{ p.name }}</div>
+        <div class="pet-sub">{% if p.is_companion %}&#11088; Quest buddy!{% else %}&nbsp;{% endif %}</div>
+        <div class="pet-actions">
+          <button class="talk-btn" data-talk="{{ p.pk }}">&#128266; Talk</button>
+          {% if not p.is_companion %}
+          <button class="comp-btn" data-comp="{{ p.pk }}">Take on quest</button>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="egg-face" role="img" aria-label="mystery egg">&#129370;</div>
+        <div class="pet-name">Mystery Egg</div>
+        <div class="pet-sub">Tap to hatch!</div>
+        <div class="pet-actions">
+          <button class="hatch-btn" data-hatch="{{ p.pk }}">&#10024; Hatch!</button>
+        </div>
+      {% endif %}
+    </div>
+    {% empty %}
+    <p id="noPets">No pets yet &mdash; buy your first egg!</p>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+function showToast(msg, isErr) {
+  var t = document.createElement('div');
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.textContent = msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(function(){ t.remove(); }, 4000);
+}
+
+function post(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify(body || {})
+  }).then(function(r){ return r.json().then(function(d){ d._status = r.status; return d; }); });
+}
+
+// ---- buy ----
+var buyBtn = document.getElementById('buyBtn');
+buyBtn.addEventListener('click', function() {
+  buyBtn.disabled = true;
+  var nonce = Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  post('/api/pet/buy/', { nonce: nonce }).then(function(d) {
+    buyBtn.disabled = false;
+    if (d.ok) {
+      showToast('You got a mystery egg!');
+      setTimeout(function(){ location.reload(); }, 900);
+    } else if (d.error === 'not_enough_points') {
+      showToast('You need ' + d.egg_cost + ' points \u2014 keep spelling!', true);
+    } else {
+      showToast(d.error || 'Could not buy egg', true);
+    }
+  }).catch(function(){ buyBtn.disabled = false; showToast('Connection problem', true); });
+});
+
+// ---- hatch / talk / companion (event delegation) ----
+document.getElementById('petGrid').addEventListener('click', function(ev) {
+  var b = ev.target.closest('button');
+  if (!b) return;
+
+  if (b.dataset.hatch) {
+    b.disabled = true;
+    b.innerHTML = '<span class="hatching">&#129370;</span> Hatching...';
+    post('/api/pet/hatch/' + b.dataset.hatch + '/').then(function(d) {
+      if (d.ok) {
+        showToast(d.pet.name + ' hatched!');
+        setTimeout(function(){ location.reload(); }, 900);
+      } else {
+        b.disabled = false;
+        b.innerHTML = '&#10024; Hatch!';
+        showToast(d.error || 'Try again soon!', true);
+      }
+    }).catch(function() {
+      b.disabled = false;
+      b.innerHTML = '&#10024; Hatch!';
+      showToast('Connection problem', true);
+    });
+  }
+
+  if (b.dataset.talk) {
+    var idx = Math.floor(Math.random() * 5);
+    var a = new Audio('/petsound/' + b.dataset.talk + '/' + idx + '/');
+    a.play().catch(function(){ showToast('No voice yet - try again soon!', true); });
+  }
+
+  if (b.dataset.comp) {
+    post('/api/pet/companion/' + b.dataset.comp + '/').then(function(d) {
+      if (d.ok) {
+        showToast(d.pet.name + ' will join your quest!');
+        setTimeout(function(){ location.reload(); }, 900);
+      } else {
+        showToast(d.error || 'Could not pick buddy', true);
+      }
+    });
+  }
+});
+</script>
+{% endblock %}
