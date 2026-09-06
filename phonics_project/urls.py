@@ -39,6 +39,7 @@ urlpatterns = [
     path("pets/", views.pet_area, name="pet_area"),
     path("api/pet/buy/", views.api_pet_buy, name="api_pet_buy"),
     path("api/pet/hatch/<int:pet_id>/", views.api_pet_hatch, name="api_pet_hatch"),
+    path("api/pet/hatch/<int:pet_id>/status/", views.api_pet_hatch_status, name="api_pet_hatch_status"),
     path("api/pet/companion/<int:pet_id>/", views.api_pet_companion,
          name="api_pet_companion"),
     path("petimage/<int:pet_id>/", views.pet_image, name="pet_image"),

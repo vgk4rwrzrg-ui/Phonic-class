@@ -25,6 +25,8 @@ mimetypes.add_type("audio/ogg", ".ogg")
 mimetypes.add_type("audio/mp4", ".m4a")
 mimetypes.add_type("audio/mp4", ".mp4")
 
+import threading
+
 
 def _content_type(name):
     mime, _ = mimetypes.guess_type(name or "")
@@ -1088,7 +1090,7 @@ def _save_pet_image(pet, raw_bytes):
 
 @require_POST
 def api_pet_hatch(request, pet_id):
-    """Generate the pet image via DeepAI.  Idempotent: re-posts return the image."""
+    """Start async hatching via Celery (or thread fallback)."""
     kid = get_kid(request)
     if not kid:
         return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
@@ -1096,35 +1098,58 @@ def api_pet_hatch(request, pet_id):
     if not pet:
         return JsonResponse({"ok": False, "error": "not found"}, status=404)
     if pet.hatched:
-        return JsonResponse({"ok": True, "duplicate": True, "pet": _pet_dict(pet)})
-
+        return JsonResponse({"ok": True, "status": "complete", "pet": _pet_dict(pet)})
+    
+    # Already hatching? Return current status
+    if pet.hatch_status not in ('unhatched', 'failed'):
+        return JsonResponse({"ok": True, "status": pet.hatch_status, "pet_id": pet.pk})
+    
+    # Start the hatch
     try:
-        raw = _deepai_generate(pet.prompt)
-    except RuntimeError as e:
-        if str(e) == "no_api_key":
-            logger.error("Pet hatch failed (pet %s): DEEPAI_API_KEY is not set", pet.pk)
-            return JsonResponse(
-                {"ok": False, "error":
-                 "Image maker is not set up yet - ask your teacher!"}, status=503)
-        logger.exception("Pet hatch failed (pet %s)", pet.pk)
-        return JsonResponse({"ok": False, "error":
-                             "The egg is not ready - try again soon!"}, status=502)
-    except Exception:
-        logger.exception("Pet hatch failed (pet %s)", pet.pk)
-        return JsonResponse({"ok": False, "error":
-                             "The egg is not ready - try again soon!"}, status=502)
+        from game.tasks import hatch_pet_task
+        result = hatch_pet_task.apply_async(args=[pet.pk])
+        pet.hatch_task_id = result.id
+        pet.hatch_status = 'cracking'
+        pet.save(update_fields=['hatch_task_id', 'hatch_status'])
+        logger.info(f"Started Celery hatch task {result.id} for pet {pet.pk}")
+    except Exception as e:
+        # Celery not available - use thread fallback
+        logger.warning(f"Celery unavailable, using thread fallback for pet {pet.pk}: {e}")
+        pet.hatch_status = 'cracking'
+        pet.save(update_fields=['hatch_status'])
+        
+        def _thread_hatch():
+            from game.tasks import hatch_pet_task
+            hatch_pet_task(pet.pk)
+        
+        thread = threading.Thread(target=_thread_hatch, daemon=True)
+        thread.start()
+    
+    return JsonResponse({"ok": True, "status": "cracking", "pet_id": pet.pk})
 
-    if _looks_blank(raw):
-        # Flat single-color output means generation failed; keep the egg.
-        logger.error("Pet hatch (pet %s): DeepAI returned a blank/flat image", pet.pk)
-        return JsonResponse({"ok": False, "error":
-                             "The egg is not ready - try again soon!"}, status=502)
 
-    pet.image_path = _save_pet_image(pet, raw)
-    pet.hatched = True
-    pet.save()
-    return JsonResponse({"ok": True, "pet": _pet_dict(pet)})
 
+def api_pet_hatch_status(request, pet_id):
+    """Poll the hatch progress."""
+    kid = get_kid(request)
+    if not kid:
+        return JsonResponse({"ok": False, "error": "not signed in"}, status=403)
+    pet = Pet.objects.filter(pk=pet_id, kid=kid).first()
+    if not pet:
+        return JsonResponse({"ok": False, "error": "not found"}, status=404)
+    
+    response = {
+        "ok": True,
+        "status": pet.hatch_status,
+        "hatched": pet.hatched,
+    }
+    
+    if pet.hatched:
+        response["pet"] = _pet_dict(pet)
+    elif pet.hatch_status == 'failed':
+        response["error"] = "The egg is not ready - try again soon!"
+    
+    return JsonResponse(response)
 
 @require_POST
 def api_pet_companion(request, pet_id):

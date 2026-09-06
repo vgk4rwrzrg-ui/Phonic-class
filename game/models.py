@@ -209,6 +209,19 @@ class Pet(models.Model):
     image_path = models.CharField(max_length=200, blank=True, default="")
     is_companion = models.BooleanField(default=False)
     created = models.DateTimeField(auto_now_add=True)
+    hatch_status = models.CharField(
+        max_length=20,
+        default='unhatched',
+        choices=[
+            ('unhatched', 'Unhatched'),
+            ('cracking', 'Cracking'),
+            ('halfway', 'Halfway'),
+            ('hatching', 'Hatching'),
+            ('complete', 'Complete'),
+            ('failed', 'Failed'),
+        ]
+    )
+    hatch_task_id = models.CharField(max_length=100, blank=True, default='')
 
     class Meta:
         ordering = ["-created"]

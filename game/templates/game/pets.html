@@ -29,6 +29,16 @@
   .comp-btn { background:#c8e6c9; }
   .hatching { animation: wobble .5s infinite; display:inline-block; }
   @keyframes wobble { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(6deg)} }
+
+  .egg-wrapper { position:relative; }
+  .egg-face { position:relative; display:inline-block; }
+  .crack { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+           font-size:2rem; color:#ff6b35; text-shadow:0 0 8px rgba(255,107,53,.6); }
+  .crack-more { font-size:2.5rem; }
+  .crack-lots { font-size:3rem; animation:pulse 0.6s infinite; }
+  .wobble { display:inline-block; animation:wobble 0.5s infinite; }
+  .pulse { display:inline-block; animation:pulse 0.6s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
   @media (prefers-reduced-motion: reduce) { .hatching { animation:none; } }
   #toasts { position:fixed; top:10px; left:50%; transform:translateX(-50%);
             z-index:999; display:flex; flex-direction:column; gap:8px;
