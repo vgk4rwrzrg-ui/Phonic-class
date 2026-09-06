@@ -1,5 +1,7 @@
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from django.db import DEFAULT_DB_ALIAS, connections
+from django.db.migrations.executor import MigrationExecutor
 
 from game import phrases, tts
 from game.models import Class, GraphemeSound, Word, WordSound
@@ -84,6 +86,17 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"generated phrase {slug}"))
 
     def handle(self, *args, **opts):
+        # Refuse to run against an out-of-date database: writing shared
+        # sounds (classroom=NULL) or word sources needs migrations 0011-0013.
+        executor = MigrationExecutor(connections[DEFAULT_DB_ALIAS])
+        plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+        if plan:
+            missing = ", ".join(f"{mig.app_label}.{mig.name}" for mig, _ in plan)
+            raise CommandError(
+                "Your database is missing migrations: " + missing +
+                "\nRun this first, then re-run makevoices:\n"
+                "    python manage.py migrate"
+            )
         if opts["all"]:
             classrooms = list(Class.objects.order_by("name"))
         elif opts["code"]:
