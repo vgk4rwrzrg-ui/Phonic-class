@@ -59,6 +59,16 @@ def pet_media_allowed(request, kid, pet):
     )
 
 
+# DeepAI text2img generator tier. "standard" is the cheapest (non-pro)
+# tier so a subscription's token budget goes further; other values DeepAI
+# accepts are "hd" and "genius" (the pro tier). Override via env.
+DEFAULT_DEEPAI_VERSION = "standard"
+
+
+def deepai_image_version():
+    return os.environ.get("DEEPAI_IMAGE_VERSION", DEFAULT_DEEPAI_VERSION)
+
+
 def deepai_text2img(prompt):
     """Call DeepAI text2img; return raw image bytes.  Raises on any failure."""
     import requests as rq
@@ -68,7 +78,8 @@ def deepai_text2img(prompt):
         raise RuntimeError("no_api_key")
     resp = rq.post(
         "https://api.deepai.org/api/text2img",
-        data={"text": prompt, "image_generator_version": "standard",
+        data={"text": prompt,
+              "image_generator_version": deepai_image_version(),
               "width": str(petgen.IMAGE_SIZE), "height": str(petgen.IMAGE_SIZE)},
         headers={"api-key": api_key},
         timeout=60,
@@ -120,9 +131,10 @@ def imagen_generate(prompt):
 def generate_pet_image(prompt):
     """Generate a pet image with the configured backend.
 
-    PET_IMAGE_BACKEND: "imagen" | "deepai" | unset (auto).
-    Auto prefers Imagen whenever GEMINI_API_KEY is configured, otherwise
-    falls back to DeepAI. game.views re-exports this as _deepai_generate
+    PET_IMAGE_BACKEND: "deepai" | "imagen" | unset (auto).
+    Auto prefers DeepAI whenever DEEPAI_API_KEY is configured (the primary,
+    subscription-backed service); Imagen is the alternative when only
+    GEMINI_API_KEY exists. game.views re-exports this as _deepai_generate
     (historical name) so tests and game.tasks keep patching one entry point.
     """
     backend = os.environ.get("PET_IMAGE_BACKEND", "").strip().lower()
@@ -130,6 +142,10 @@ def generate_pet_image(prompt):
         return deepai_text2img(prompt)
     if backend == "imagen":
         return imagen_generate(prompt)
+    # Auto: DeepAI first (subscription-friendly); Imagen only when there is
+    # no DeepAI key but a Gemini key is configured.
+    if os.environ.get("DEEPAI_API_KEY"):
+        return deepai_text2img(prompt)
     if os.environ.get("GEMINI_API_KEY"):
         return imagen_generate(prompt)
     return deepai_text2img(prompt)

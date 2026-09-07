@@ -44,15 +44,53 @@ class BackendDispatchTests(SimpleTestCase):
             pet_services.imagen_generate("p")
         self.assertIn("imagen-3.0-generate-002:predict", m.call_args[0][0])
 
-    def test_auto_prefers_imagen_when_gemini_key_set(self):
+    def test_auto_prefers_deepai_when_its_key_is_set(self):
+        """A DeepAI subscription wins in auto mode, even with a Gemini key."""
+        with patch.dict("os.environ", {"DEEPAI_API_KEY": "dk",
+                                       "GEMINI_API_KEY": "k",
+                                       "PET_IMAGE_BACKEND": ""}), \
+                patch("requests.post") as m:
+            m.return_value = _FakeResp({"output_url": "http://img"})
+            with patch("requests.get") as g:
+                g.return_value.content = b"deepai-bytes"
+                g.return_value.raise_for_status = lambda: None
+                out = pet_services.generate_pet_image("p")
+        self.assertEqual(out, b"deepai-bytes")
+        self.assertIn("api.deepai.org", m.call_args[0][0])
+
+    def test_auto_uses_imagen_only_without_deepai_key(self):
         payload = {"predictions": [{"bytesBase64Encoded":
                                     base64.b64encode(b"i").decode()}]}
-        with patch.dict("os.environ", {"GEMINI_API_KEY": "k",
+        with patch.dict("os.environ", {"DEEPAI_API_KEY": "",
+                                       "GEMINI_API_KEY": "k",
                                        "PET_IMAGE_BACKEND": ""}), \
                 patch("requests.post", return_value=_FakeResp(payload)) as m:
             out = pet_services.generate_pet_image("p")
         self.assertEqual(out, b"i")
         self.assertIn("googleapis.com", m.call_args[0][0])
+
+    def test_deepai_version_defaults_to_standard_tier(self):
+        with patch.dict("os.environ", {"DEEPAI_API_KEY": "dk"}), \
+                patch("requests.post") as m:
+            m.return_value = _FakeResp({"output_url": "http://img"})
+            with patch("requests.get") as g:
+                g.return_value.content = b"x"
+                g.return_value.raise_for_status = lambda: None
+                pet_services.deepai_text2img("p")
+        sent = m.call_args.kwargs["data"]
+        self.assertEqual(sent["image_generator_version"], "standard")
+
+    def test_deepai_version_env_override(self):
+        with patch.dict("os.environ", {"DEEPAI_API_KEY": "dk",
+                                       "DEEPAI_IMAGE_VERSION": "hd"}), \
+                patch("requests.post") as m:
+            m.return_value = _FakeResp({"output_url": "http://img"})
+            with patch("requests.get") as g:
+                g.return_value.content = b"x"
+                g.return_value.raise_for_status = lambda: None
+                pet_services.deepai_text2img("p")
+        self.assertEqual(m.call_args.kwargs["data"]["image_generator_version"],
+                         "hd")
 
     def test_auto_falls_back_to_deepai_without_gemini_key(self):
         with patch.dict("os.environ", {"GEMINI_API_KEY": "",
