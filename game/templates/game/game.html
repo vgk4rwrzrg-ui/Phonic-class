@@ -364,6 +364,28 @@ function wordToUnits(text) {
 
 function sizeClass(g) { return g.length === 1 ? '' : (g.length === 2 ? ' two' : ' three'); }
 
+/* ---- Decoy tiles (like the balloon game): harder words earn extra
+   wrong-letter tiles in the tray.  Difficulty = number of sound units,
+   with digraphs/trigraphs counting double because they are trickier. ---- */
+function decoyCountFor(units) {
+  var score = units.length;
+  units.forEach(function (u) { if (u.g.length > 1) score++; });
+  if (score <= 3) return 1;   // CAT -> 1 decoy
+  if (score <= 5) return 2;   // FROG, SHIP+ -> 2 decoys
+  return 3;                   // long or digraph-heavy words -> 3 decoys
+}
+function makeDecoys(units, count) {
+  var used = {};
+  units.forEach(function (u) {
+    u.g.toUpperCase().split('').forEach(function (c) { used[c] = true; });
+  });
+  var pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(function (c) { return !used[c]; });
+  shuffle(pool);
+  return pool.slice(0, count).map(function (c) {
+    return { g: c, sound: LETTER_SOUNDS[c.toLowerCase()] || c };
+  });
+}
+
 function api(path, data) {
   return fetch(path, {
     method: 'POST',
@@ -474,6 +496,9 @@ function setupRound() {
 
   var units = wordToUnits(w.text);
   tiles = units.map(function (u, i) { return { letter: u.g, sound: u.sound, slot: i, placed: false }; });
+  makeDecoys(units, decoyCountFor(units)).forEach(function (d) {
+    tiles.push({ letter: d.g, sound: d.sound, slot: -1, placed: false, decoy: true });
+  });
   do { shuffle(tiles); }
   while (tiles.length > 1 && tiles.every(function (t, i) { return t.slot === i; }));
 
@@ -485,12 +510,12 @@ function setupRound() {
     span.textContent = u.g;
     b.appendChild(span); boxesEl.appendChild(b);
   });
-  tiles.forEach(function (t) {
+  tiles.forEach(function (t, idx) {
     var el = document.createElement('div');
     el.className = 'tile' + sizeClass(t.letter);
     el.textContent = t.letter;
-    el.style.background = 'linear-gradient(' + TILE_COLORS[t.slot % TILE_COLORS.length] + ', ' +
-                          TILE_COLORS[t.slot % TILE_COLORS.length] + 'cc)';
+    el.style.background = 'linear-gradient(' + TILE_COLORS[idx % TILE_COLORS.length] + ', ' +
+                          TILE_COLORS[idx % TILE_COLORS.length] + 'cc)';
     attachTileGestures(el, t);
     tilesEl.appendChild(el);
     audioFor(t.letter);   // preload the sound for this tile
@@ -622,7 +647,7 @@ function showHint() {
 }
 
 function checkWin() {
-  if (!tiles.every(function (t) { return t.placed; })) return;
+  if (!tiles.every(function (t) { return t.decoy || t.placed; })) return;
   roundDone = true;
   var w = currentWord();
   var praise = PRAISE[Math.floor(Math.random() * PRAISE.length)];
@@ -1132,15 +1157,18 @@ function nextBossWord() {
     boxes.appendChild(b);
   });
   var order = units.map(function (u, i) { return { g: u.g, sound: u.sound, i: i }; });
+  makeDecoys(units, decoyCountFor(units)).forEach(function (d) {
+    order.push({ g: d.g, sound: d.sound, i: -1, decoy: true });
+  });
   do { shuffle(order); }
   while (order.length > 1 && order.every(function (o, i) { return o.i === i; }));
-  order.forEach(function (o) {
+  order.forEach(function (o, idx) {
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'bz-tile';
     btn.textContent = o.g;
     btn.setAttribute('aria-label', 'Letter ' + o.g);
-    var c = TILE_COLORS[o.i % TILE_COLORS.length];
+    var c = TILE_COLORS[idx % TILE_COLORS.length];
     btn.style.background = 'linear-gradient(' + c + ',' + c + 'cc)';
     btn.addEventListener('click', function () { bossTileTap(btn, o); });
     tilesEl.appendChild(btn);

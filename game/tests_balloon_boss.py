@@ -489,3 +489,36 @@ class TeacherSettingsTests(TestCase):
         self.client.logout()
         resp = _post_json(self.client, "/teacher/settings/", {"boss_enabled": False})
         self.assertNotEqual(resp.status_code, 200)
+
+
+class DecoyTileTemplateTests(TestCase):
+    """The decoy-tile system lives in game.html's JS; pin its key pieces so a
+    template refactor can't silently drop it from either game mode."""
+
+    def _game_html(self):
+        with open("game/templates/game/game.html", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_decoy_helpers_present(self):
+        html = self._game_html()
+        self.assertIn("function decoyCountFor(", html)
+        self.assertIn("function makeDecoys(", html)
+
+    def test_regular_game_adds_decoys_and_win_check_ignores_them(self):
+        html = self._game_html()
+        # setupRound mixes decoys into the tray...
+        self.assertIn("tiles.push({ letter: d.g, sound: d.sound, slot: -1, placed: false, decoy: true });", html)
+        # ...and the win check must skip them, or rounds become unwinnable.
+        self.assertIn("return t.decoy || t.placed;", html)
+        self.assertNotIn("if (!tiles.every(function (t) { return t.placed; }))", html)
+
+    def test_boss_fight_adds_decoys(self):
+        html = self._game_html()
+        self.assertIn("order.push({ g: d.g, sound: d.sound, i: -1, decoy: true });", html)
+
+    def test_tile_colors_keyed_by_tray_index_not_slot(self):
+        # TILE_COLORS[-1] is undefined; slot-keyed colors would render decoys
+        # with a broken gradient and give them away instantly.
+        html = self._game_html()
+        self.assertNotIn("TILE_COLORS[t.slot % TILE_COLORS.length]", html)
+        self.assertNotIn("TILE_COLORS[o.i % TILE_COLORS.length]", html)
