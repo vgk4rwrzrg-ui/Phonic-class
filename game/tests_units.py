@@ -329,3 +329,38 @@ class TtsCheckPhonemeProbeTests(SimpleTestCase):
         from game.management.commands.ttscheck import phoneme_tags_honored
         with mock.patch("game.tts._synth_ssml", return_value=b"same"):
             self.assertFalse(phoneme_tags_honored())
+
+
+class FindVoiceTests(SimpleTestCase):
+    def test_voice_language_derivation(self):
+        self.assertEqual(tts._voice_language("en-GB-Wavenet-A"), "en-GB")
+        self.assertEqual(tts._voice_language("en-US-Standard-C"), "en-US")
+        self.assertEqual(tts._voice_language(""), "en-US")
+
+    def test_probe_detects_honoring_and_ignoring_voices(self):
+        from game.management.commands.findvoice import voice_honors_phonemes
+        with mock.patch("game.tts._synth_ssml", side_effect=[b"a", b"b"]):
+            self.assertTrue(voice_honors_phonemes("en-GB-Wavenet-A"))
+        with mock.patch("game.tts._synth_ssml", return_value=b"same"):
+            self.assertFalse(voice_honors_phonemes("en-US-Wavenet-F"))
+
+    def test_command_reports_and_recommends(self):
+        from io import StringIO
+        from django.core.management import call_command
+        with mock.patch("game.tts._synth_ssml",
+                        side_effect=lambda ssml, voice_name=None:
+                        (ssml + (voice_name or "")).encode()):
+            out = StringIO()
+            call_command("findvoice", voices="en-GB-Wavenet-A", stdout=out)
+        text = out.getvalue()
+        self.assertIn("HONORS IPA", text)
+        self.assertIn("GOOGLE_TTS_VOICE=en-GB-Wavenet-A", text)
+
+    def test_synth_ssml_passes_voice_through(self):
+        fake_mod = mock.MagicMock()
+        with mock.patch.dict("sys.modules", {"google.cloud": mock.MagicMock(texttospeech=fake_mod),
+                                             "google.cloud.texttospeech": fake_mod}):
+            tts._synth_ssml("<speak>s</speak>", voice_name="en-GB-Wavenet-A")
+        kwargs = fake_mod.VoiceSelectionParams.call_args.kwargs
+        self.assertEqual(kwargs["name"], "en-GB-Wavenet-A")
+        self.assertEqual(kwargs["language_code"], "en-GB")

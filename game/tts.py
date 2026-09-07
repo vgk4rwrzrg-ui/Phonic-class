@@ -87,12 +87,20 @@ def split_graphemes(text):
     return units
 
 
-def _synth_ssml(ssml):
+def _voice_language(name):
+    """Language code implied by a Google voice name ("en-GB-Wavenet-A" -> "en-GB")."""
+    parts = (name or "").split("-")
+    return "-".join(parts[:2]) if len(parts) >= 2 else "en-US"
+
+
+def _synth_ssml(ssml, voice_name=None):
     from google.cloud import texttospeech
 
+    name = voice_name or VOICE_NAME
     client = texttospeech.TextToSpeechClient()
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml)
-    voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=VOICE_NAME)
+    voice = texttospeech.VoiceSelectionParams(
+        language_code=_voice_language(name), name=name)
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.MP3
     )
