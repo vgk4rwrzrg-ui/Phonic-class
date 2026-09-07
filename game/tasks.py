@@ -42,17 +42,15 @@ def _fail(pet, error):
 
 
 def _generate_image(pet):
-    """Call DeepAI (via the patchable game.views alias); (raw, error)."""
-    # Resolved through game.views at call time so tests can patch
-    # game.views._deepai_generate without touching the network.
-    from game import views
+    """Call the configured image backend; return (raw_bytes, error_string)."""
+    from game.pet_services import generate_pet_image
 
     try:
-        return views._deepai_generate(pet.prompt), None
+        return generate_pet_image(pet.prompt), None
     except RuntimeError as e:
         if str(e) == "no_api_key":
             logger.error(
-                f"Pet hatch failed (pet {pet.pk}): DEEPAI_API_KEY is not set")
+                f"Pet hatch failed (pet {pet.pk}): no image API key is set")
         else:
             logger.exception(f"Pet hatch failed (pet {pet.pk})")
         return None, str(e)
@@ -62,13 +60,13 @@ def _generate_image(pet):
 
 
 def _do_hatch(pet):
-    from game import views  # patchable aliases: _looks_blank, _save_pet_image
+    from game.pet_services import looks_blank, save_pet_image
 
     # Stage 1: cracking (starting)
     pet.set_hatch_status("cracking")
     time.sleep(0.5)  # brief pause for visual feedback
 
-    # Stage 2: halfway (calling DeepAI)
+    # Stage 2: halfway (calling image API)
     pet.set_hatch_status("halfway")
     raw, error = _generate_image(pet)
     if error is not None:
@@ -76,14 +74,14 @@ def _do_hatch(pet):
 
     # Stage 3: hatching (processing image)
     pet.set_hatch_status("hatching")
-    if views._looks_blank(raw):
+    if looks_blank(raw):
         logger.error(
-            f"Pet hatch (pet {pet.pk}): DeepAI returned a blank/flat image")
+            f"Pet hatch (pet {pet.pk}): image API returned a blank/flat image")
         return _fail(pet, "blank_image")
 
     # Stage 4: complete
     pet.set_hatch_status("complete",
-                         image_path=views._save_pet_image(pet, raw),
+                         image_path=save_pet_image(pet, raw),
                          hatched=True)
     logger.info(f"Pet {pet.pk} ({pet.name}) hatched successfully")
     return {"status": "complete", "pet_id": pet.pk, "name": pet.name}

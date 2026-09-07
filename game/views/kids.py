@@ -40,17 +40,60 @@ def class_join(request, code):
     return _enter_class_by_code(request, code, bad_code=code)
 
 
+# Maximum failed PIN attempts before a short lockout kicks in.
+_MAX_PIN_ATTEMPTS = 5
+_PIN_LOCKOUT_SECONDS = 60
+
+
+def _pin_attempt_key(kid_id):
+    return f"pin_attempts_{kid_id}"
+
+
+def _pin_locked_out(request, kid_id):
+    """Return True if this session has exceeded the failed-attempt threshold."""
+    import time
+    key = _pin_attempt_key(kid_id)
+    attempts = request.session.get(key, [])
+    cutoff = time.time() - _PIN_LOCKOUT_SECONDS
+    # Drop attempts older than the lockout window
+    recent = [t for t in attempts if t > cutoff]
+    request.session[key] = recent
+    return len(recent) >= _MAX_PIN_ATTEMPTS
+
+
+def _record_pin_failure(request, kid_id):
+    import time
+    key = _pin_attempt_key(kid_id)
+    attempts = request.session.get(key, [])
+    attempts.append(time.time())
+    request.session[key] = attempts
+
+
+def _clear_pin_attempts(request, kid_id):
+    request.session.pop(_pin_attempt_key(kid_id), None)
+
+
 def _try_pin_login(request, classroom):
     """Attempt a kid PIN login from POST data; return an error string or None.
 
     PINs are intentionally plain text (see Kid model) — this is a simple
-    equality check, not a credential hash.
+    equality check, not a credential hash.  Failed attempts are tracked per
+    session/kid to limit brute-force guessing of 4-digit PINs.
     """
     kid = classroom.kids.filter(pk=request.POST.get("kid_id")).first()
+    if not kid:
+        return "Oops, wrong PIN. Try again!"
+
+    if _pin_locked_out(request, kid.pk):
+        return f"Too many wrong tries. Please wait {_PIN_LOCKOUT_SECONDS} seconds."
+
     pin = (request.POST.get("pin") or "").strip()
-    if kid and pin == kid.pin:
+    if pin == kid.pin:
+        _clear_pin_attempts(request, kid.pk)
         request.session["kid_id"] = kid.pk
         return None
+
+    _record_pin_failure(request, kid.pk)
     return "Oops, wrong PIN. Try again!"
 
 

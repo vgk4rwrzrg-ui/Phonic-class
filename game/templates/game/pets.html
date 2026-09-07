@@ -339,7 +339,7 @@ function buyTap(tier) {
     if (btn) { btn.style.opacity = ''; btn.style.pointerEvents = ''; }
     if (d.error) { showToast(d.error, 'err'); return; }
     updateNudges(d.spendable);
-    addEggCard(d.pet_id, tier);
+    addEggCard(d.pet.id, tier);
     showToast(tier === 'hd' ? 'Legendary egg acquired!' : 'Egg added!');
   })
   .catch(function() {

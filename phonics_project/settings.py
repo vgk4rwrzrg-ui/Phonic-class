@@ -3,8 +3,18 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
+_INSECURE_KEY = "insecure-dev-key-change-me"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _INSECURE_KEY)
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+
+# Refuse to start in production with the default dev key.
+if not DEBUG and SECRET_KEY == _INSECURE_KEY:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be set to a strong random value in production. "
+        "Run: python -c \"import secrets; print(secrets.token_hex(50))\" "
+        "and set the result as DJANGO_SECRET_KEY."
+    )
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 

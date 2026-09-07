@@ -19,14 +19,6 @@ from .dashboard import dashboard
 from .pets import (pet_area, api_pet_buy, api_pet_hatch, api_pet_hatch_status,
                    api_pet_companion, pet_image, pet_sound)
 
-# --- Backwards-compatible aliases (patched by tests, used by game.tasks) ----
-from ..context import get_classroom, get_kid, teacher_classroom as _teacher_classroom
-from ..pet_services import (HATCH_STALE_SECONDS,
-                            generate_pet_image as _deepai_generate,
-                            looks_blank as _looks_blank,
-                            save_pet_image as _save_pet_image,
-                            pet_dict as _pet_dict)
-
 __all__ = [
     "kids_root", "join_class", "class_join", "picker", "logout_kid",
     "switch_class", "game", "leaderboard",
@@ -39,5 +31,8 @@ __all__ = [
     "dashboard",
     "pet_area", "api_pet_buy", "api_pet_hatch", "api_pet_hatch_status",
     "api_pet_companion", "pet_image", "pet_sound",
-    "get_classroom", "get_kid", "HATCH_STALE_SECONDS",
+    "get_classroom", "get_kid",
 ]
+
+# Keep get_classroom / get_kid accessible via game.views for any external callers.
+from ..context import get_classroom, get_kid  # noqa: E402
