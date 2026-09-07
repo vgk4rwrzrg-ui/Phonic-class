@@ -572,3 +572,34 @@ class FetchSeedSoundsProcessingTests(SimpleTestCase):
                 missing = cmd._download_all(tmp, force=False)
             self.assertEqual(sorted(missing), sorted(f.FILE_SOURCES))
             self.assertEqual(os.listdir(tmp), [])   # nothing bogus written
+
+
+class TailPreservingFilterTests(TestCase):
+    """The old chains cut sounds off: stop_periods trims killed decaying tails
+    (S went 2.6s -> 0.6s in measurement). Only outer-silence trims allowed."""
+
+    def test_seed_chain_trims_only_outer_silence(self):
+        from game.management.commands import fetchseedsounds as f
+        chain = f.CLEAN_ARGS[1]
+        self.assertNotIn("stop_periods", chain)
+        self.assertIn("areverse", chain)
+        self.assertIn("apad", chain)  # breathing room after the tail
+
+    def test_seed_fallback_chains_also_tail_safe(self):
+        from game.management.commands import fetchseedsounds as f
+        for chain in f.FALLBACK_CHAINS[:-1]:  # last is loudnorm-only
+            self.assertNotIn("stop_periods", chain[1])
+            self.assertIn("areverse", chain[1])
+
+    def test_recording_pipeline_keeps_internal_quiet_stretches(self):
+        from game import audio
+        self.assertNotIn("stop_periods", audio.FILTERS)
+        self.assertIn("areverse", audio.FILTERS)
+        self.assertIn("afftdn", audio.FILTERS)  # noise reduction retained
+
+    def test_fetchseedsounds_has_reprocess_flag(self):
+        from django.core.management import get_commands, load_command_class
+        cmd = load_command_class("game", "fetchseedsounds")
+        parser = cmd.create_parser("manage.py", "fetchseedsounds")
+        opts = parser.parse_args(["--reprocess"])
+        self.assertTrue(opts.reprocess)

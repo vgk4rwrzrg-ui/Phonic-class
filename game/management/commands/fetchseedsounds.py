@@ -194,17 +194,22 @@ FILE_SOURCES = {
 COMBOS = {"X": ["K", "S"], "QU": ["K", "W"]}
 
 CLEAN_ARGS = ["-af",
-    "silenceremove=start_periods=1:start_threshold=-40dB:"
-    "stop_periods=1:stop_threshold=-40dB,loudnorm=I=-16:TP=-1.5",
+    # Trim ONLY the outer silence: leading via silenceremove, trailing via the
+    # areverse trick. A plain stop_periods trim cuts the instant the level dips
+    # below threshold, chopping off the sound's natural decaying tail.
+    "silenceremove=start_periods=1:start_threshold=-40dB,"
+    "areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
+    "adelay=60:all=1,apad=pad_dur=0.12,loudnorm=I=-16:TP=-1.5",
     "-ac", "1", "-ar", "44100", "-b:a", "64k"]
 
-# Quiet fricatives (SH's hiss) fall below -40dB, so that trim can swallow the
-# whole recording and feeding loudnorm an empty stream SIGABRTs ffmpeg 7.0
-# (assert best_input >= 0). Fall back through gentler variants instead.
+# Quiet fricatives (SH's hiss) fall below -40dB, so even the leading trim can
+# swallow the whole recording and feeding loudnorm an empty stream SIGABRTs
+# ffmpeg 7.0 (assert best_input >= 0). Fall back through gentler variants.
 FALLBACK_CHAINS = [
     ["-af",
-     "silenceremove=start_periods=1:start_threshold=-50dB:"
-     "stop_periods=1:stop_threshold=-50dB,loudnorm=I=-16:TP=-1.5",
+     "silenceremove=start_periods=1:start_threshold=-50dB,"
+     "areverse,silenceremove=start_periods=1:start_threshold=-55dB,areverse,"
+     "adelay=60:all=1,apad=pad_dur=0.12,loudnorm=I=-16:TP=-1.5",
      "-ac", "1", "-ar", "44100", "-b:a", "64k"],
     ["-af", "loudnorm=I=-16:TP=-1.5",
      "-ac", "1", "-ar", "44100", "-b:a", "64k"],
@@ -282,6 +287,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--force", action="store_true",
                             help="Re-download and re-process even if files exist.")
+        parser.add_argument("--reprocess", action="store_true",
+                            help="Rebuild the MP3s from the kept raw downloads "
+                                 "(no re-downloading).")
 
     # -- download helpers -------------------------------------------------
 
@@ -383,13 +391,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         force = opts.get("force", False)
+        reprocess = force or opts.get("reprocess", False)
         os.makedirs(SEED_DIR, exist_ok=True)
         raw_dir = os.path.join(SEED_DIR, "_raw")
         os.makedirs(raw_dir, exist_ok=True)
 
         missing = self._download_all(raw_dir, force)
-        missing += self._process_graphemes(raw_dir, force)
-        self._build_combos(force)
+        missing += self._process_graphemes(raw_dir, reprocess)
+        self._build_combos(reprocess)
 
         if missing:
             self.stdout.write(self.style.WARNING(

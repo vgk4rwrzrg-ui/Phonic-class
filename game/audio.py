@@ -4,10 +4,15 @@ import os
 import subprocess
 import tempfile
 
+# Trim ONLY leading/trailing silence (areverse trick). The old chain used
+# stop_periods=-1, which deleted EVERY quiet stretch - including the natural
+# decay at the end of a sound and pauses inside a phrase - so recordings came
+# back audibly cut off.
 FILTERS = (
-    "silenceremove=start_periods=1:start_threshold=-40dB:"
-    "stop_periods=-1:stop_threshold=-40dB:stop_silence=0.2,"
+    "silenceremove=start_periods=1:start_threshold=-40dB,"
+    "areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
     "highpass=f=80,afftdn=nf=-25,"
+    "adelay=60:all=1,apad=pad_dur=0.12,"
     "loudnorm=I=-16:TP=-1.5:LRA=11"
 )
 

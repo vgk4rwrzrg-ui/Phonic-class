@@ -602,76 +602,112 @@ function extForType(t) {
   return 'mp3';
 }
 
-function toggleRecord(kind, value, btn) {
-  if (recorder && recorder.state === 'recording') {
-    recorder.stop();
+// --- Recording via Web Audio API (raw WAV capture) ---
+// MediaRecorder proved unreliable on tablets (instant self-stop, codec
+// quirks), so we capture raw PCM with an AudioContext and build a WAV file
+// ourselves. Works identically on Safari/iPad/Chrome/Firefox; the server
+// converts to MP3 anyway.
+var wavRec = null;       // active recording session, or null
+var wavStarting = false; // guards against double-fired taps while opening mic
+
+function encodeWav(buffers, totalLen, sampleRate) {
+  var data = new Float32Array(totalLen);
+  var off = 0;
+  for (var i = 0; i < buffers.length; i++) { data.set(buffers[i], off); off += buffers[i].length; }
+  var buf = new ArrayBuffer(44 + totalLen * 2);
+  var v = new DataView(buf);
+  function wstr(o, s) { for (var k = 0; k < s.length; k++) v.setUint8(o + k, s.charCodeAt(k)); }
+  wstr(0, 'RIFF'); v.setUint32(4, 36 + totalLen * 2, true); wstr(8, 'WAVE');
+  wstr(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  wstr(36, 'data'); v.setUint32(40, totalLen * 2, true);
+  var peak = 0;
+  for (var j = 0; j < totalLen; j++) {
+    var s = Math.max(-1, Math.min(1, data[j]));
+    if (Math.abs(s) > peak) peak = Math.abs(s);
+    v.setInt16(44 + j * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return { blob: new Blob([buf], { type: 'audio/wav' }), peak: peak };
+}
+
+function stopWavRecording() {
+  var rec = wavRec;
+  if (!rec) return;
+  // Ignore ghost stops: some touch browsers fire the tap handler twice, which
+  // used to start-and-instantly-stop the recording.
+  if (Date.now() - rec.startedAt < 400) return;
+  wavRec = null;
+  try { rec.proc.disconnect(); rec.source.disconnect(); } catch (e) {}
+  rec.stream.getTracks().forEach(function (t) { t.stop(); });
+  try { rec.ctx.close(); } catch (e) {}
+  if (rec.btn) { rec.btn.textContent = '\uD83C\uDF99'; rec.btn.classList.remove('recording'); }
+  if (!rec.totalLen) {
+    alert('No audio was captured \u2014 check the mic permission for this site and close other apps using the microphone.');
     return;
   }
+  var wav = encodeWav(rec.buffers, rec.totalLen, rec.sampleRate);
+  if (wav.peak < 0.004) {
+    alert('Only silence was captured \u2014 the microphone seems muted. Check the mic permission and hardware mute switch, then try again.');
+    return;
+  }
+  var fd = new FormData();
+  if (rec.kind === 'word') fd.append('word', rec.value);
+  else fd.append('grapheme', rec.value);
+  fd.append('audio', wav.blob, rec.value + '.wav');
+  showToast('Saving\u2026', 'success');
+  fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res && res.ok) { markCustom(rec.kind, rec.value); showToast('Recording saved \u2713', 'success'); }
+      else alert('Save failed' + (res && res.error ? ': ' + res.error : ''));
+    })
+    .catch(function () { alert('Save failed \u2014 check your connection.'); });
+}
+
+function toggleRecord(kind, value, btn) {
+  if (wavRec) { stopWavRecording(); return; }
+  if (wavStarting) return;   // double-fired tap while the mic is opening
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     alert('Recording needs a modern browser over HTTPS.');
     return;
   }
+  wavStarting = true;
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-    // Pick a container the browser really supports (Safari/iPad: audio/mp4).
-    var mime = '';
-    var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
-    for (var ci = 0; ci < candidates.length; ci++) {
-      if (window.MediaRecorder && MediaRecorder.isTypeSupported &&
-          MediaRecorder.isTypeSupported(candidates[ci])) { mime = candidates[ci]; break; }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      wavStarting = false;
+      alert('This browser cannot record audio \u2014 use the \u2B06 upload instead.');
+      return;
     }
-    recStream = stream; recKind = kind; recValue = value; recBtn = btn;
-    var chunks = [];
-    try {
-      recorder = mime ? new MediaRecorder(stream, { mimeType: mime })
-                      : new MediaRecorder(stream);   // let the browser choose
-    } catch (err) {
-      try { recorder = new MediaRecorder(stream); }  // retry without options
-      catch (err2) {
-        stream.getTracks().forEach(function (t) { t.stop(); });
-        alert('This browser cannot record audio (' + (err2 && err2.name) + ') \u2014 use the \u2B06 upload instead.');
-        recorder = null;
-        return;
-      }
-    }
-    if (recorder.mimeType) mime = recorder.mimeType;  // what we actually got
-    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onerror = function (e) {
-      var name = (e && e.error && e.error.name) || 'unknown error';
-      alert('Recording stopped by the browser: ' + name);
-    };
-    recorder.onstop = function () {
-      recStream.getTracks().forEach(function (t) { t.stop(); });
-      if (recBtn) { recBtn.textContent = '🎙'; recBtn.classList.remove('recording'); }
-      recorder = null;
-      var blob = new Blob(chunks, { type: mime });
-      if (!blob.size) {
-        alert('No audio was captured \u2014 the microphone stopped right away. ' +
-              'Check the mic permission for this site, close other apps using the mic, and try a slightly longer recording.');
-        return;
-      }
-      var fd = new FormData();
-      if (recKind === 'word') fd.append('word', recValue);
-      else fd.append('grapheme', recValue);
-      fd.append('audio', blob, recValue + '.' + extForType(mime));
-      fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (res) {
-          if (res && res.ok) { markCustom(recKind, recValue); showToast('Recording saved \u2713', 'success'); }
-          else alert('Save failed' + (res && res.error ? ': ' + res.error : ''));
-        })
-        .catch(function () { alert('Save failed \u2014 check your connection.'); });
-    };
-    // If the mic track dies (permission pulled, hardware sleep), end cleanly
-    // instead of hanging in the recording state.
-    stream.getTracks().forEach(function (t) {
-      t.addEventListener('ended', function () {
-        if (recorder && recorder.state === 'recording') recorder.stop();
+    var ctx = new AC();
+    var resume = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+    resume.then(function () {
+      var source = ctx.createMediaStreamSource(stream);
+      var proc = ctx.createScriptProcessor(4096, 1, 1);
+      var rec = { ctx: ctx, stream: stream, source: source, proc: proc,
+                  buffers: [], totalLen: 0, sampleRate: ctx.sampleRate,
+                  startedAt: Date.now(), kind: kind, value: value, btn: btn };
+      proc.onaudioprocess = function (e) {
+        if (wavRec !== rec) return;
+        var ch = e.inputBuffer.getChannelData(0);
+        rec.buffers.push(new Float32Array(ch));
+        rec.totalLen += ch.length;
+        if (rec.totalLen > rec.sampleRate * 30) stopWavRecording();  // 30s cap
+      };
+      source.connect(proc);
+      proc.connect(ctx.destination);   // required or onaudioprocess never fires
+      stream.getTracks().forEach(function (t) {
+        t.addEventListener('ended', function () { if (wavRec === rec) stopWavRecording(); });
       });
+      wavRec = rec;
+      wavStarting = false;
+      if (btn) { btn.textContent = '\u23F9'; btn.classList.add('recording'); }
+      showToast('Recording\u2026 tap \u23F9 to stop', 'success');
     });
-    recorder.start(250);   // collect chunks as we go (Safari-safe)
-    if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
-    showToast('Recording\u2026 tap \u23F9 to stop', 'success');
   }).catch(function (err) {
+    wavStarting = false;
     alert('Microphone unavailable: ' + ((err && err.name) || 'unknown') +
           '. Allow mic access for this site in the browser settings.');
   });
