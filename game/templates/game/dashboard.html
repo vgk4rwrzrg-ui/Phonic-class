@@ -527,6 +527,21 @@ function googleWord(w, btn) {
     .then(function () { if (btn) { btn.disabled = false; btn.textContent = '\uD83C\uDF10'; } });
 }
 
+function playSound(g) {
+  // Letter/grapheme sounds have no good browser-TTS fallback (it would say
+  // the letter NAME, not the phonic sound), so explain instead of failing.
+  var a = new Audio('/sound/' + encodeURIComponent(g) + '/');
+  var explain = function () {
+    showToast('No audio for ' + g + ' yet \u2014 record it, upload a file, or set up Google TTS (python manage.py ttscheck).', 'error');
+  };
+  a.onerror = explain;
+  var p = a.play();
+  if (p && p.catch) p.catch(function (err) {
+    // NotAllowedError etc. — onerror handles missing audio separately
+    if (err && err.name === 'NotSupportedError') explain();
+  });
+}
+
 function playWord(w) {
   var a = new Audio('/wordsound/' + encodeURIComponent(w) + '/');
   a.onerror = function () {
@@ -615,8 +630,11 @@ function toggleRecord(kind, value, btn) {
       fd.append('audio', blob, recValue + '.' + extForType(mime));
       fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
         .then(function (r) { return r.json(); })
-        .then(function (res) { if (res && res.ok) markCustom(recKind, recValue); else alert('Save failed'); })
-        .catch(function () { alert('Save failed'); });
+        .then(function (res) {
+          if (res && res.ok) { markCustom(recKind, recValue); showToast('Recording saved \u2713', 'success'); }
+          else alert('Save failed' + (res && res.error ? ': ' + res.error : ''));
+        })
+        .catch(function () { alert('Save failed \u2014 check your connection.'); });
       recorder = null;
     };
     recorder.start();
@@ -637,7 +655,7 @@ if (uploadForm) {
     fetch('/teacher/record/', { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
       .then(function (r) { return r.json(); })
       .then(function (res) {
-        if (!res || !res.ok) { alert('Upload failed'); return; }
+        if (!res || !res.ok) { alert('Upload failed' + (res && res.error ? ': ' + res.error : '')); return; }
         markCustom('sound', g);
         var msg = document.getElementById('uploadMsg');
         if (msg) { msg.textContent = 'Saved ✓'; setTimeout(function () { msg.textContent = ''; }, 2000); }
