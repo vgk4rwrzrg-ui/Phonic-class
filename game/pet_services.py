@@ -59,7 +59,7 @@ def pet_media_allowed(request, kid, pet):
     )
 
 
-def deepai_generate(prompt):
+def deepai_text2img(prompt):
     """Call DeepAI text2img; return raw image bytes.  Raises on any failure."""
     import requests as rq
 
@@ -80,6 +80,59 @@ def deepai_generate(prompt):
     img = rq.get(url, timeout=60)
     img.raise_for_status()
     return img.content
+
+
+# Cheapest Imagen tier by default — NOT the ultra/pro model — so the same
+# token budget goes further.  Override with IMAGEN_MODEL if needed, e.g.
+# imagen-4.0-generate-001 or imagen-3.0-generate-002.
+DEFAULT_IMAGEN_MODEL = "imagen-4.0-fast-generate-001"
+
+
+def imagen_generate(prompt):
+    """Generate via Google Imagen (Gemini API); return raw image bytes.
+
+    Needs GEMINI_API_KEY.  Raises on any failure (same contract as DeepAI).
+    """
+    import base64
+    import requests as rq
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("no_api_key")
+    model = os.environ.get("IMAGEN_MODEL", DEFAULT_IMAGEN_MODEL)
+    resp = rq.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:predict",
+        json={"instances": [{"prompt": prompt}],
+              "parameters": {"sampleCount": 1, "aspectRatio": "1:1",
+                             "personGeneration": "dont_allow"}},
+        headers={"x-goog-api-key": api_key},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    preds = resp.json().get("predictions") or []
+    b64 = preds[0].get("bytesBase64Encoded") if preds else None
+    if not b64:
+        raise RuntimeError("no_image_data")
+    return base64.b64decode(b64)
+
+
+def generate_pet_image(prompt):
+    """Generate a pet image with the configured backend.
+
+    PET_IMAGE_BACKEND: "imagen" | "deepai" | unset (auto).
+    Auto prefers Imagen whenever GEMINI_API_KEY is configured, otherwise
+    falls back to DeepAI. game.views re-exports this as _deepai_generate
+    (historical name) so tests and game.tasks keep patching one entry point.
+    """
+    backend = os.environ.get("PET_IMAGE_BACKEND", "").strip().lower()
+    if backend == "deepai":
+        return deepai_text2img(prompt)
+    if backend == "imagen":
+        return imagen_generate(prompt)
+    if os.environ.get("GEMINI_API_KEY"):
+        return imagen_generate(prompt)
+    return deepai_text2img(prompt)
 
 
 def looks_blank(raw_bytes):

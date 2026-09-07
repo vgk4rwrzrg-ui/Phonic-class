@@ -22,7 +22,7 @@ from .pets import (pet_area, api_pet_buy, api_pet_hatch, api_pet_hatch_status,
 # --- Backwards-compatible aliases (patched by tests, used by game.tasks) ----
 from ..context import get_classroom, get_kid, teacher_classroom as _teacher_classroom
 from ..pet_services import (HATCH_STALE_SECONDS,
-                            deepai_generate as _deepai_generate,
+                            generate_pet_image as _deepai_generate,
                             looks_blank as _looks_blank,
                             save_pet_image as _save_pet_image,
                             pet_dict as _pet_dict)

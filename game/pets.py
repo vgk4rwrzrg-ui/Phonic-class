@@ -115,11 +115,22 @@ PROMPT_RULES = (
 def roll_traits(rng=None):
     """Pick one option from each of the 42 categories."""
     rng = rng or random.Random(secrets.randbits(64))
-    return {key: rng.choice(pool) for key, pool in TRAITS.items()}
+    traits = {key: rng.choice(pool) for key, pool in TRAITS.items()}
+    # Wings drag every species toward "dragon" in image models; keep them
+    # rare on non-dragons so a bunny still reads as a bunny.
+    if "dragon" not in traits["species"] and traits["wing_type"] != "no wings":
+        if rng.random() < 0.75:
+            traits["wing_type"] = "no wings"
+    return traits
 
 
 def build_prompt(traits):
-    """Compose the DeepAI image prompt: visual traits + grounding rules."""
+    """Compose the image prompt: species first, visual traits, grounding rules.
+
+    The species leads the prompt and is restated at the end, because image
+    models weight early tokens heavily — with the species buried mid-prompt
+    every pet tended to come out looking like a dragon.
+    """
     parts = []
     t = traits
     parts.append(f"a {t['size']}, {t['body_shape']} baby {t['species']}")
@@ -147,7 +158,12 @@ def build_prompt(traits):
     if t["accessory"] != "no accessory":
         parts.append(f"wearing a {t['accessory_color']} {t['accessory']}")
     parts.append(f"surrounded by a hint of {t['element_theme']}")
-    return PROMPT_RULES + " The pet: " + "; ".join(parts) + "."
+    parts.append(f"in a cozy {t['habitat']} setting")
+    species_rule = f"The creature must clearly be a {t['species']}"
+    if "dragon" not in t["species"]:
+        species_rule += " \u2014 NOT a dragon and not any other animal"
+    return (f"A cute cartoon baby {t['species']}: " + "; ".join(parts) + ". "
+            + species_rule + ". " + PROMPT_RULES)
 
 
 # ---------------------------------------------------------------------------
