@@ -1,6 +1,7 @@
 {% extends "game/base.html" %}
 {% block title %}Spell Bee &ndash; My Pets{% endblock %}
 {% block extra_head %}<style>html, body { touch-action: pan-x pan-y; }</style>{% endblock %}
+{% block header_extra %}<div style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="font-size:.85rem;opacity:.7;color:#fff;">{{ kid.icon }} {{ kid.name }}</span><span style="font-size:1rem;font-weight:800;background:oklch(97% 0.04 80);border:2px solid oklch(72% 0.15 80);border-radius:12px;padding:5px 14px;color:oklch(30% 0.12 60);white-space:nowrap;">&#11088; <span id="spendable">{{ spendable }}</span> pts</span></div>{% endblock %}
 {% block content %}
 <style>
   :root {
@@ -13,77 +14,6 @@
     --radius-card: 18px;
     --radius-btn: 12px;
     --shadow-card: 0 3px 10px rgba(0,0,0,.08);
-  }
-
-  /* ---- aside nav drawer ---- */
-  #navDrawer {
-    position: fixed; top: 0; left: 0; height: 100%; width: 260px;
-    background: oklch(22% 0.06 280); color: #fff;
-    transform: translateX(-100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
-    z-index: 200; display: flex; flex-direction: column; padding: 0;
-    box-shadow: 4px 0 24px rgba(0,0,0,.35);
-  }
-  #navDrawer.open { transform: translateX(0); }
-  #drawerOverlay {
-    display: none; position: fixed; inset: 0; z-index: 199;
-    background: rgba(0,0,0,.45);
-  }
-  #drawerOverlay.show { display: block; }
-  .drawer-header {
-    background: oklch(30% 0.12 280); padding: 22px 20px 16px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .drawer-title {
-    font-size: 1.35rem; font-weight: 900; letter-spacing: .04em;
-    background: linear-gradient(90deg, oklch(85% 0.14 80), oklch(90% 0.10 60));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .drawer-close {
-    background: none; border: none; color: #fff; font-size: 1.6rem;
-    cursor: pointer; padding: 4px 8px; line-height: 1; opacity: .75;
-    transition: opacity .15s;
-  }
-  .drawer-close:hover { opacity: 1; }
-  .drawer-nav { list-style: none; margin: 0; padding: 12px 0; flex: 1; }
-  .drawer-nav li a {
-    display: flex; align-items: center; gap: 12px;
-    padding: 14px 22px; color: oklch(88% 0.04 280);
-    text-decoration: none; font-size: 1.05rem; font-weight: 600;
-    transition: background .15s, color .15s;
-  }
-  .drawer-nav li a:hover { background: oklch(30% 0.10 280); color: #fff; }
-  .drawer-nav li a .nav-icon { font-size: 1.3rem; width: 28px; text-align: center; }
-  .drawer-footer {
-    padding: 16px 22px; border-top: 1px solid oklch(35% 0.06 280);
-    font-size: .8rem; color: oklch(60% 0.05 280);
-  }
-
-  /* ---- page header ---- */
-  .pet-header {
-    display: flex; align-items: center; gap: 14px;
-    background: linear-gradient(135deg, oklch(30% 0.12 280), oklch(22% 0.06 280));
-    padding: 14px 18px; margin: -16px -16px 0; color: #fff;
-  }
-  .menu-btn {
-    background: none; border: none; color: #fff; font-size: 1.7rem;
-    cursor: pointer; padding: 4px 8px; line-height: 1; flex-shrink: 0;
-    transition: opacity .15s;
-  }
-  .menu-btn:hover { opacity: .8; }
-  .page-title-block { flex: 1; }
-  .page-title-block h1 {
-    margin: 0; font-size: 1.5rem; font-weight: 900; letter-spacing: .05em;
-    background: linear-gradient(90deg, oklch(85% 0.14 80), oklch(90% 0.10 60));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .page-title-block .subtitle { font-size: .82rem; opacity: .75; margin: 1px 0 0; }
-  .pet-points {
-    font-size: 1.15rem; font-weight: 800;
-    background: oklch(97% 0.04 80); border: 2px solid var(--gold);
-    border-radius: 14px; padding: 8px 16px; color: oklch(30% 0.12 60);
-    white-space: nowrap;
   }
 
   /* ---- wrap ---- */
@@ -207,41 +137,12 @@
   @keyframes shake  { 0%,100%{transform:translateX(-3px)} 50%{transform:translateX(3px)} }
   @media (prefers-reduced-motion: reduce) {
     .egg-face.wobble,.egg-face.shake,.pet-img.fade-in,.hd-badge { animation: none; }
-    #navDrawer { transition: none; }
   }
 </style>
 
 <form style="display:none">{% csrf_token %}</form>
 <div id="toasts" aria-live="polite"></div>
 
-<!-- slide-out nav drawer -->
-<div id="drawerOverlay" aria-hidden="true"></div>
-<aside id="navDrawer" role="navigation" aria-label="Site navigation">
-  <div class="drawer-header">
-    <span class="drawer-title">&#127822; Spell Bee</span>
-    <button class="drawer-close" id="drawerClose" aria-label="Close menu">&times;</button>
-  </div>
-  <ul class="drawer-nav">
-    <li><a href="{% url 'game' %}"><span class="nav-icon">&#9999;&#65039;</span> Spelling Game</a></li>
-    <li><a href="{% url 'pet_area' %}"><span class="nav-icon">&#129370;</span> My Pets</a></li>
-    <li><a href="{% url 'leaderboard' %}"><span class="nav-icon">&#127942;</span> Leaderboard</a></li>
-    {% if user.is_authenticated %}
-    <li><a href="{% url 'dashboard' %}"><span class="nav-icon">&#128196;</span> Teacher Dashboard</a></li>
-    {% endif %}
-  </ul>
-  <div class="drawer-footer">Spell Bee &mdash; Phonics Class</div>
-</aside>
-
-<!-- page header bar -->
-<div class="pet-header">
-  <button class="menu-btn" id="menuBtn" aria-label="Open navigation menu"
-          aria-expanded="false" aria-controls="navDrawer">&#9776;</button>
-  <div class="page-title-block">
-    <h1>&#127822; Spell Bee</h1>
-    <div class="subtitle">{{ kid.icon }} {{ kid.name }}&rsquo;s creature collection</div>
-  </div>
-  <div class="pet-points">&#11088; <span id="spendable">{{ spendable }}</span> pts</div>
-</div>
 
 <div class="pet-wrap">
   <div class="buy-section">
@@ -316,31 +217,6 @@ var spendableEl = document.getElementById('spendable');
 var EGG_COST    = {{ egg_cost }};
 var HD_COST     = {{ hd_cost }};
 
-/* ---- drawer ---- */
-(function() {
-  var drawer   = document.getElementById('navDrawer');
-  var overlay  = document.getElementById('drawerOverlay');
-  var menuBtn  = document.getElementById('menuBtn');
-  var closeBtn = document.getElementById('drawerClose');
-  function openDrawer() {
-    drawer.classList.add('open');
-    overlay.classList.add('show');
-    menuBtn.setAttribute('aria-expanded', 'true');
-    closeBtn.focus();
-  }
-  function closeDrawer() {
-    drawer.classList.remove('open');
-    overlay.classList.remove('show');
-    menuBtn.setAttribute('aria-expanded', 'false');
-    menuBtn.focus();
-  }
-  menuBtn.addEventListener('click', openDrawer);
-  closeBtn.addEventListener('click', closeDrawer);
-  overlay.addEventListener('click', closeDrawer);
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
-  });
-}());
 
 function showToast(msg, isErr) {
   var t = document.createElement('div');
