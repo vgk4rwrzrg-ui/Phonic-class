@@ -116,6 +116,15 @@ class BuyEggTests(TestCase):
 
 
 class HatchTests(TestCase):
+    def setUp(self):
+        # Force synchronous dispatch so hatch task finishes before assertions race
+        from unittest.mock import patch as _patch
+        def _sync_dispatch(pet):
+            from game.tasks import hatch_pet_task
+            hatch_pet_task(pet.pk)
+        patcher = _patch('game.pet_services.dispatch_hatch', side_effect=_sync_dispatch)
+        self.mock_dispatch = patcher.start()
+        self.addCleanup(patcher.stop)
     """Async hatch tests: Celery runs eagerly (inline, same DB transaction)."""
 
     @classmethod
@@ -290,7 +299,7 @@ class SoundAndPageTests(TestCase):
         _, cr, kid = _setup()
         _login(self.client, kid)
         resp = self.client.get("/pets/")
-        self.assertContains(resp, "Buy egg")
+        self.assertContains(resp, "Basic Egg")
 
     def test_teacher_settings_pets(self):
         teacher, cr, kid = _setup()

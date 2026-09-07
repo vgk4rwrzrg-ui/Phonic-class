@@ -1,5 +1,5 @@
 {% extends "game/base.html" %}
-{% block title %}My Pets - Phonics Class{% endblock %}
+{% block title %}Spell Bee &ndash; My Pets{% endblock %}
 {% block extra_head %}<style>html, body { touch-action: pan-x pan-y; }</style>{% endblock %}
 {% block content %}
 <style>
@@ -14,117 +14,256 @@
     --radius-btn: 12px;
     --shadow-card: 0 3px 10px rgba(0,0,0,.08);
   }
-  .pet-wrap { max-width:760px; margin:0 auto; padding:12px; }
-  .pet-top { display:flex; align-items:center; justify-content:space-between;
-             flex-wrap:wrap; gap:10px; margin-bottom:8px; }
-  .pet-points { font-size:1.3rem; font-weight:800; background:var(--gold-bg);
-                border:2px solid var(--gold); border-radius:14px; padding:10px 18px; }
-  /* buy buttons */
-  .buy-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
-  .buy-btn { font-size:1.05rem; font-weight:800; padding:13px 18px;
-             border:none; border-radius:var(--radius-btn);
-             cursor:pointer; min-height:52px; transition:filter .15s; }
-  .buy-btn:disabled { opacity:.42; cursor:not-allowed; filter:none; }
-  .buy-btn:not(:disabled):hover { filter:brightness(1.08); }
-  .buy-btn-basic { background:var(--accent); color:#fff; }
-  .buy-btn-hd    { background:linear-gradient(135deg,oklch(55% 0.18 280),oklch(66% 0.16 50));
-                   color:#fff; }
-  /* grid */
-  .pet-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-              gap:14px; margin-top:18px; }
-  .pet-card { background:var(--surface); border-radius:var(--radius-card);
-              padding:14px; text-align:center; box-shadow:var(--shadow-card); }
-  .pet-card.companion { outline:4px solid var(--gold); }
-  .pet-card.hd-pet { background:linear-gradient(160deg,#faf5ff 0%,#fff 60%); }
+
+  /* ---- aside nav drawer ---- */
+  #navDrawer {
+    position: fixed; top: 0; left: 0; height: 100%; width: 260px;
+    background: oklch(22% 0.06 280); color: #fff;
+    transform: translateX(-100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+    z-index: 200; display: flex; flex-direction: column; padding: 0;
+    box-shadow: 4px 0 24px rgba(0,0,0,.35);
+  }
+  #navDrawer.open { transform: translateX(0); }
+  #drawerOverlay {
+    display: none; position: fixed; inset: 0; z-index: 199;
+    background: rgba(0,0,0,.45);
+  }
+  #drawerOverlay.show { display: block; }
+  .drawer-header {
+    background: oklch(30% 0.12 280); padding: 22px 20px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .drawer-title {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: .04em;
+    background: linear-gradient(90deg, oklch(85% 0.14 80), oklch(90% 0.10 60));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .drawer-close {
+    background: none; border: none; color: #fff; font-size: 1.6rem;
+    cursor: pointer; padding: 4px 8px; line-height: 1; opacity: .75;
+    transition: opacity .15s;
+  }
+  .drawer-close:hover { opacity: 1; }
+  .drawer-nav { list-style: none; margin: 0; padding: 12px 0; flex: 1; }
+  .drawer-nav li a {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 22px; color: oklch(88% 0.04 280);
+    text-decoration: none; font-size: 1.05rem; font-weight: 600;
+    transition: background .15s, color .15s;
+  }
+  .drawer-nav li a:hover { background: oklch(30% 0.10 280); color: #fff; }
+  .drawer-nav li a .nav-icon { font-size: 1.3rem; width: 28px; text-align: center; }
+  .drawer-footer {
+    padding: 16px 22px; border-top: 1px solid oklch(35% 0.06 280);
+    font-size: .8rem; color: oklch(60% 0.05 280);
+  }
+
+  /* ---- page header ---- */
+  .pet-header {
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(135deg, oklch(30% 0.12 280), oklch(22% 0.06 280));
+    padding: 14px 18px; margin: -16px -16px 0; color: #fff;
+  }
+  .menu-btn {
+    background: none; border: none; color: #fff; font-size: 1.7rem;
+    cursor: pointer; padding: 4px 8px; line-height: 1; flex-shrink: 0;
+    transition: opacity .15s;
+  }
+  .menu-btn:hover { opacity: .8; }
+  .page-title-block { flex: 1; }
+  .page-title-block h1 {
+    margin: 0; font-size: 1.5rem; font-weight: 900; letter-spacing: .05em;
+    background: linear-gradient(90deg, oklch(85% 0.14 80), oklch(90% 0.10 60));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .page-title-block .subtitle { font-size: .82rem; opacity: .75; margin: 1px 0 0; }
+  .pet-points {
+    font-size: 1.15rem; font-weight: 800;
+    background: oklch(97% 0.04 80); border: 2px solid var(--gold);
+    border-radius: 14px; padding: 8px 16px; color: oklch(30% 0.12 60);
+    white-space: nowrap;
+  }
+
+  /* ---- wrap ---- */
+  .pet-wrap { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
+
+  /* ---- buy buttons: equal size grid ---- */
+  .buy-section { padding: 18px 0 6px; }
+  .buy-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 480px) { .buy-row { grid-template-columns: 1fr; } }
+  .buy-col { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+  .buy-btn {
+    font-size: 1rem; font-weight: 800; padding: 14px 12px;
+    border: none; border-radius: var(--radius-btn);
+    cursor: pointer; min-height: 58px; width: 100%;
+    transition: filter .15s, transform .1s;
+    line-height: 1.3; text-align: center;
+  }
+  .buy-btn:disabled { opacity: .42; cursor: not-allowed; filter: none; transform: none; }
+  .buy-btn:not(:disabled):hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .buy-btn:not(:disabled):active { transform: translateY(0); }
+  .buy-btn-basic { background: var(--accent); color: #fff; }
+  .buy-btn-hd {
+    background: linear-gradient(135deg, oklch(55% 0.18 280), oklch(66% 0.16 50));
+    color: #fff;
+  }
+  .points-nudge {
+    font-size: .82rem; font-weight: 700; color: var(--accent);
+    margin: 2px 0 0; min-height: 1.1em; text-align: center;
+  }
+  .buy-desc {
+    font-size: .8rem; color: var(--muted); text-align: center;
+    margin: 0 0 4px; padding: 0 4px;
+  }
+
+  /* ---- grid ---- */
+  .pet-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px; margin-top: 18px;
+  }
+  .pet-card {
+    background: var(--surface); border-radius: var(--radius-card);
+    padding: 14px; text-align: center; box-shadow: var(--shadow-card);
+  }
+  .pet-card.companion { outline: 4px solid var(--gold); }
+  .pet-card.hd-pet { background: linear-gradient(160deg, #faf5ff 0%, #fff 60%); }
+
   /* egg */
-  .egg-wrapper { position:relative; line-height:1; }
-  .egg-face { font-size:5.5rem; display:inline-block; transition:transform .3s; }
-  .egg-face.wobble { animation:wobble .45s infinite; }
-  .egg-face.shake  { animation:shake .25s infinite; }
-  .egg-crack-overlay { position:absolute; top:50%; left:50%;
-                       transform:translate(-50%,-50%);
-                       font-size:2.4rem; pointer-events:none; }
+  .egg-wrapper { position: relative; line-height: 1; }
+  .egg-face { font-size: 5.5rem; display: inline-block; transition: transform .3s; }
+  .egg-face.wobble { animation: wobble .45s infinite; }
+  .egg-face.shake  { animation: shake .25s infinite; }
+  .egg-crack-overlay {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2.4rem; pointer-events: none;
+  }
+
   /* hatched */
-  .pet-img { width:100%; max-width:220px; aspect-ratio:1/1; border-radius:14px;
-             background:#f2ecff; object-fit:cover; display:block; margin:0 auto 6px; }
-  .pet-img.fade-in { animation:fadeIn .5s ease; }
+  .pet-img {
+    width: 100%; max-width: 220px; aspect-ratio: 1/1; border-radius: 14px;
+    background: #f2ecff; object-fit: cover; display: block; margin: 0 auto 6px;
+  }
+  .pet-img.fade-in { animation: fadeIn .5s ease; }
   @keyframes fadeIn { from{opacity:0;transform:scale(.9)} to{opacity:1;transform:scale(1)} }
+
   /* text */
-  .pet-name { font-size:1.2rem; font-weight:800; margin:6px 0 2px; }
-  .pet-sub  { color:var(--muted); font-size:.88rem; margin-bottom:8px; min-height:1.2em; }
-  .hatch-status-msg { font-size:.9rem; color:var(--muted); margin:4px 0; min-height:1.2em; }
+  .pet-name { font-size: 1.2rem; font-weight: 800; margin: 6px 0 2px; }
+  .pet-sub  { color: var(--muted); font-size: .88rem; margin-bottom: 8px; min-height: 1.2em; }
+  .hatch-status-msg { font-size: .9rem; color: var(--muted); margin: 4px 0; min-height: 1.2em; }
+
   /* saying picker */
-  .saying-picker { margin:6px 0 8px; }
-  .saying-picker label { font-size:.85rem; color:var(--muted); display:block; margin-bottom:4px; }
-  .saying-picker select { width:100%; font-size:.95rem; padding:6px 8px;
-                          border:1.5px solid #d0c8f0; border-radius:8px; background:#faf8ff; }
+  .saying-picker { margin: 6px 0 8px; }
+  .saying-picker label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  .saying-picker select {
+    width: 100%; font-size: .95rem; padding: 6px 8px;
+    border: 1.5px solid #d0c8f0; border-radius: 8px; background: #faf8ff;
+  }
+
   /* action buttons */
-  .pet-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:6px; }
-  .pet-actions button { border:none; border-radius:var(--radius-btn); padding:10px 14px;
-                        font-weight:700; font-size:.95rem; cursor:pointer; min-height:44px;
-                        transition:filter .15s; }
-  .pet-actions button:hover { filter:brightness(1.08); }
-  .hatch-btn { background:oklch(80% 0.15 75); color:oklch(28% 0.1 75); }
-  .hatch-btn:disabled { opacity:.5; cursor:not-allowed; filter:none; }
-  .talk-btn  { background:oklch(94% 0.04 230); color:oklch(30% 0.08 230); }
-  .comp-btn  { background:oklch(93% 0.06 145); color:oklch(28% 0.08 145); }
+  .pet-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+  .pet-actions button {
+    border: none; border-radius: var(--radius-btn); padding: 10px 14px;
+    font-weight: 700; font-size: .95rem; cursor: pointer; min-height: 44px;
+    transition: filter .15s;
+  }
+  .pet-actions button:hover { filter: brightness(1.08); }
+  .hatch-btn { background: oklch(80% 0.15 75); color: oklch(28% 0.1 75); }
+  .hatch-btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+  .talk-btn  { background: oklch(94% 0.04 230); color: oklch(30% 0.08 230); }
+  .comp-btn  { background: oklch(93% 0.06 145); color: oklch(28% 0.08 145); }
+
   /* Legendary badge */
-  .hd-badge { display:inline-block; font-size:.7rem; font-weight:800; letter-spacing:.06em;
-              background:linear-gradient(90deg,oklch(72% 0.18 50),oklch(82% 0.16 80),oklch(72% 0.18 50));
-              background-size:200% auto; animation:shimmer-badge 2.5s linear infinite;
-              color:#fff; border-radius:6px; padding:2px 8px; margin-left:5px;
-              vertical-align:middle; text-shadow:0 1px 2px rgba(0,0,0,.3); }
-  @keyframes shimmer-badge { to { background-position:200% center; } }
-  .points-nudge { font-size:.82rem; font-weight:700; color:oklch(55% 0.18 280);
-                  margin:2px 0 0; min-height:1.1em; text-align:center; }
+  .hd-badge {
+    display: inline-block; font-size: .7rem; font-weight: 800; letter-spacing: .06em;
+    background: linear-gradient(90deg, oklch(72% 0.18 50), oklch(82% 0.16 80), oklch(72% 0.18 50));
+    background-size: 200% auto; animation: shimmer-badge 2.5s linear infinite;
+    color: #fff; border-radius: 6px; padding: 2px 8px; margin-left: 5px;
+    vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  @keyframes shimmer-badge { to { background-position: 200% center; } }
+
   /* toasts */
-  #toasts { position:fixed; top:10px; left:50%; transform:translateX(-50%);
-            z-index:999; display:flex; flex-direction:column; gap:8px;
-            padding-top:env(safe-area-inset-top); }
-  .toast { background:oklch(20% 0.02 280); color:#fff; padding:12px 20px;
-           border-radius:999px; font-size:1.1rem; font-weight:700;
-           border:2px solid rgba(255,255,255,.2);
-           box-shadow:0 4px 14px rgba(0,0,0,.25); white-space:nowrap; }
-  .toast.err { background:oklch(40% 0.15 20); }
-  /* animations */
+  #toasts {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 999; display: flex; flex-direction: column; gap: 8px;
+    padding-top: env(safe-area-inset-top);
+  }
+  .toast {
+    background: oklch(20% 0.02 280); color: #fff; padding: 12px 20px;
+    border-radius: 999px; font-size: 1.1rem; font-weight: 700;
+    border: 2px solid rgba(255,255,255,.2);
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); white-space: nowrap;
+  }
+  .toast.err { background: oklch(40% 0.15 20); }
+
   @keyframes wobble { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(6deg)} }
   @keyframes shake  { 0%,100%{transform:translateX(-3px)} 50%{transform:translateX(3px)} }
-  @media (prefers-reduced-motion:reduce) {
-    .egg-face.wobble,.egg-face.shake,.pet-img.fade-in { animation:none; }
+  @media (prefers-reduced-motion: reduce) {
+    .egg-face.wobble,.egg-face.shake,.pet-img.fade-in,.hd-badge { animation: none; }
+    #navDrawer { transition: none; }
   }
 </style>
 
 <form style="display:none">{% csrf_token %}</form>
 <div id="toasts" aria-live="polite"></div>
 
+<!-- slide-out nav drawer -->
+<div id="drawerOverlay" aria-hidden="true"></div>
+<aside id="navDrawer" role="navigation" aria-label="Site navigation">
+  <div class="drawer-header">
+    <span class="drawer-title">&#127822; Spell Bee</span>
+    <button class="drawer-close" id="drawerClose" aria-label="Close menu">&times;</button>
+  </div>
+  <ul class="drawer-nav">
+    <li><a href="{% url 'game' %}"><span class="nav-icon">&#9999;&#65039;</span> Spelling Game</a></li>
+    <li><a href="{% url 'pet_area' %}"><span class="nav-icon">&#129370;</span> My Pets</a></li>
+    <li><a href="{% url 'leaderboard' %}"><span class="nav-icon">&#127942;</span> Leaderboard</a></li>
+    {% if user.is_authenticated %}
+    <li><a href="{% url 'dashboard' %}"><span class="nav-icon">&#128196;</span> Teacher Dashboard</a></li>
+    {% endif %}
+  </ul>
+  <div class="drawer-footer">Spell Bee &mdash; Phonics Class</div>
+</aside>
+
+<!-- page header bar -->
+<div class="pet-header">
+  <button class="menu-btn" id="menuBtn" aria-label="Open navigation menu"
+          aria-expanded="false" aria-controls="navDrawer">&#9776;</button>
+  <div class="page-title-block">
+    <h1>&#127822; Spell Bee</h1>
+    <div class="subtitle">{{ kid.icon }} {{ kid.name }}&rsquo;s creature collection</div>
+  </div>
+  <div class="pet-points">&#11088; <span id="spendable">{{ spendable }}</span> pts</div>
+</div>
+
 <div class="pet-wrap">
-  <div class="pet-top">
-    <a class="btn" href="{% url 'game' %}">&larr; Back to game</a>
-    <div class="pet-points">&#11088; <span id="spendable">{{ spendable }}</span> pts</div>
-  </div>
-
-  <h1 style="margin:14px 0 2px;">&#128012; {{ kid.icon }} {{ kid.name }}&rsquo;s Pets</h1>
-  <p style="color:var(--muted);margin:0 0 14px;">
-    Spell words to earn points, then hatch a creature to join your quest!
-  </p>
-
-  <div class="buy-row" style="align-items:flex-start;">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-      <button class="buy-btn buy-btn-basic" id="buyBasicBtn">
-        &#129370; Basic egg &mdash; {{ egg_cost }} pts
-      </button>
-      <p class="points-nudge" id="basicNudge" aria-live="polite"></p>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-      <button class="buy-btn buy-btn-hd" id="buyHdBtn">
-        &#127775; Legendary egg &mdash; {{ hd_cost }} pts<span class="hd-badge">LEGENDARY</span>
-      </button>
-      <p class="points-nudge" id="hdNudge" aria-live="polite"></p>
+  <div class="buy-section">
+    <div class="buy-row">
+      <div class="buy-col">
+        <button class="buy-btn buy-btn-basic" id="buyBasicBtn">
+          &#129370; Basic Egg<br><small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
+        </button>
+        <p class="points-nudge" id="basicNudge" aria-live="polite"></p>
+        <p class="buy-desc">A mystery creature hatches!</p>
+      </div>
+      <div class="buy-col">
+        <button class="buy-btn buy-btn-hd" id="buyHdBtn">
+          &#127775; Legendary Egg<br>
+          <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
+            <span class="hd-badge">LEGENDARY</span></small>
+        </button>
+        <p class="points-nudge" id="hdNudge" aria-live="polite"></p>
+        <p class="buy-desc">Amazing creature + 5 fun sayings!</p>
+      </div>
     </div>
   </div>
-  <p style="font-size:.82rem;color:var(--muted);margin:0 0 4px;">
-    Legendary eggs hatch into amazing detailed creatures &amp; unlock 5 fun sayings to pick!
-  </p>
 
   <div class="pet-grid" id="petGrid">
     {% for p in pets %}
@@ -177,6 +316,32 @@ var spendableEl = document.getElementById('spendable');
 var EGG_COST    = {{ egg_cost }};
 var HD_COST     = {{ hd_cost }};
 
+/* ---- drawer ---- */
+(function() {
+  var drawer   = document.getElementById('navDrawer');
+  var overlay  = document.getElementById('drawerOverlay');
+  var menuBtn  = document.getElementById('menuBtn');
+  var closeBtn = document.getElementById('drawerClose');
+  function openDrawer() {
+    drawer.classList.add('open');
+    overlay.classList.add('show');
+    menuBtn.setAttribute('aria-expanded', 'true');
+    closeBtn.focus();
+  }
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    overlay.classList.remove('show');
+    menuBtn.setAttribute('aria-expanded', 'false');
+    menuBtn.focus();
+  }
+  menuBtn.addEventListener('click', openDrawer);
+  closeBtn.addEventListener('click', closeDrawer);
+  overlay.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+  });
+}());
+
 function showToast(msg, isErr) {
   var t = document.createElement('div');
   t.className = 'toast' + (isErr ? ' err' : '');
@@ -196,11 +361,11 @@ function get(url) {
 }
 
 /* ---- egg animation ---- */
-var STAGE_EMOJI = {cracking:'\uD83D\uDD0E', halfway:'\u26A1', hatching:'\uD83D\uDCF8'};
+var STAGE_EMOJI = {cracking: '&#128269;', halfway: '&#9889;', hatching: '&#128248;'};
 var STAGE_MSGS  = {
-  cracking: 'Cracking open\u2026',
-  halfway:  'Magic happening\u2026',
-  hatching: 'Almost here\u2026'
+  cracking: 'Cracking open...',
+  halfway:  'Magic happening...',
+  hatching: 'Almost here...'
 };
 
 function setEggStage(petId, status) {
@@ -211,12 +376,12 @@ function setEggStage(petId, status) {
   if (!face) return;
   var active = (status === 'cracking' || status === 'halfway' || status === 'hatching');
   face.className = 'egg-face' + (active ? ' wobble' : '') + (status === 'hatching' ? ' shake' : '');
-  if (crack) crack.textContent = STAGE_EMOJI[status] || '';
+  if (crack && STAGE_EMOJI[status]) crack.innerHTML = STAGE_EMOJI[status];
   if (msg && STAGE_MSGS[status]) msg.textContent = STAGE_MSGS[status];
-  if (btn && active) { btn.disabled = true; btn.textContent = '\u23F3 Hatching\u2026'; }
+  if (btn && active) { btn.disabled = true; btn.textContent = 'Hatching...'; }
 }
 
-/* ---- reveal creature inline (no page reload) ---- */
+/* ---- reveal creature inline ---- */
 function revealPet(petId, pet) {
   var card = document.querySelector('[data-id="' + petId + '"]');
   if (!card) { location.reload(); return; }
@@ -246,10 +411,10 @@ function revealPet(petId, pet) {
   if (isHd) card.classList.add('hd-pet');
   var noPets = document.getElementById('noPets');
   if (noPets) noPets.remove();
-  showToast(pet.name + ' hatched! \uD83C\uDF89');
+  showToast(pet.name + ' hatched!');
 }
 
-/* ---- add fresh egg card inline (no page reload) ---- */
+/* ---- add fresh egg card inline ---- */
 function addEggCard(pet) {
   var grid   = document.getElementById('petGrid');
   var noPets = document.getElementById('noPets');
@@ -273,7 +438,7 @@ function addEggCard(pet) {
   grid.appendChild(card);
 }
 
-/* ---- resilient polling: no error toast on transient blips ---- */
+/* ---- resilient polling ---- */
 var _pollers   = {};
 var _pollFails = {};
 
@@ -294,11 +459,10 @@ function startPolling(petId) {
           var btn = document.getElementById('hatch-btn-' + petId);
           var msg = document.getElementById('hatch-msg-' + petId);
           if (btn) { btn.disabled = false; btn.innerHTML = '&#10024; Try again'; }
-          if (msg) msg.textContent = 'Something went wrong \u2014 tap to try again.';
+          if (msg) msg.textContent = 'Something went wrong - tap to try again.';
         }
       })
       .catch(function() {
-        /* network blip: stay quiet, keep polling */
         _pollFails[petId] = (_pollFails[petId] || 0) + 1;
         if (_pollFails[petId] >= 8) {
           clearInterval(_pollers[petId]); delete _pollers[petId];
@@ -316,12 +480,11 @@ document.getElementById('petGrid').addEventListener('click', function(ev) {
   var b = ev.target.closest('button');
   if (!b) return;
 
-  /* HATCH: disable on first tap; never re-enable unless server returns failure */
   if (b.dataset.hatch) {
     if (b.disabled) return;
     var petId = parseInt(b.dataset.hatch, 10);
     b.disabled = true;
-    b.textContent = '\u23F3 Hatching\u2026';
+    b.textContent = 'Hatching...';
     setEggStage(petId, 'cracking');
     post('/api/pet/hatch/' + petId + '/')
       .then(function(d) {
@@ -329,32 +492,27 @@ document.getElementById('petGrid').addEventListener('click', function(ev) {
           b.disabled = false;
           b.innerHTML = '&#10024; Hatch!';
           var msg = document.getElementById('hatch-msg-' + petId);
-          if (msg) msg.textContent = (d.error || 'Something went wrong') + ' \u2014 tap to try again.';
+          if (msg) msg.textContent = (d.error || 'Something went wrong') + ' - tap to try again.';
           return;
         }
         if (d.status === 'complete' && d.pet) { revealPet(petId, d.pet); return; }
         setEggStage(petId, d.status || 'cracking');
         startPolling(petId);
       })
-      .catch(function() {
-        /* connection dropped right after tap: hatch may be running; poll to find out */
-        startPolling(petId);
-      });
+      .catch(function() { startPolling(petId); });
     return;
   }
 
-  /* TALK */
   if (b.dataset.talk) {
     var pid = b.dataset.talk;
     var idx = b.dataset.hdTalk
       ? parseInt((document.querySelector('[data-saying="' + pid + '"]') || {value:0}).value, 10)
       : Math.floor(Math.random() * 5);
     var a = new Audio('/petsound/' + pid + '/' + idx + '/');
-    a.play().catch(function(){ showToast('No voice yet \u2014 try again soon!', true); });
+    a.play().catch(function(){ showToast('No voice yet - try again soon!', true); });
     return;
   }
 
-  /* COMPANION */
   if (b.dataset.comp) {
     post('/api/pet/companion/' + b.dataset.comp + '/').then(function(d) {
       if (d.ok) {
@@ -382,16 +540,16 @@ function updateBuyButtons(pts) {
       basicNudge.textContent = '';
     } else {
       var need = EGG_COST - pts;
-      basicNudge.textContent = need + ' more point' + (need === 1 ? '' : 's') + ' to go! \uD83D\uDC4A';
+      basicNudge.textContent = need + ' more point' + (need === 1 ? '' : 's') + ' to go!';
     }
   }
   if (hdNudge) {
     if (pts >= HD_COST) {
-      hdNudge.textContent = 'You unlocked Legendary! \u2728';
+      hdNudge.textContent = 'You unlocked Legendary! ✨';
       hdNudge.style.color = 'oklch(60% 0.18 80)';
     } else {
       var needHd = HD_COST - pts;
-      hdNudge.textContent = needHd + ' more point' + (needHd === 1 ? '' : 's') + ' to go Legendary! \u2B50';
+      hdNudge.textContent = needHd + ' more point' + (needHd === 1 ? '' : 's') + ' to go Legendary! ⭐';
       hdNudge.style.color = '';
     }
   }
@@ -408,13 +566,11 @@ function buyEgg(tier, btn) {
         if (spendableEl) spendableEl.textContent = d.spendable;
         addEggCard(d.pet);
         updateBuyButtons(d.spendable);
-        showToast(tier === 'hd'
-          ? '\u2728 Legendary egg ready \u2014 tap Hatch!'
-          : '\uD83E\uDD5A Mystery egg \u2014 tap Hatch!');
+        showToast(tier === 'hd' ? 'Legendary egg ready - tap Hatch!' : 'Mystery egg - tap Hatch!');
       } else if (d.ok && d.duplicate) {
         showToast('You already have that egg!');
       } else if (d.error === 'not_enough_points') {
-        showToast('Need ' + (tier === 'hd' ? HD_COST : EGG_COST) + ' pts \u2014 keep spelling!', true);
+        showToast('Need ' + (tier === 'hd' ? HD_COST : EGG_COST) + ' pts - keep spelling!', true);
         updateBuyButtons(parseInt(spendableEl ? spendableEl.textContent : '0', 10));
       } else {
         showToast(d.error || 'Could not buy egg', true);
@@ -423,16 +579,19 @@ function buyEgg(tier, btn) {
     .catch(function(){ btn.disabled = false; showToast('Connection problem', true); });
 }
 
-document.getElementById('buyBasicBtn').addEventListener('click', function(){ buyEgg('basic', this); });
-document.getElementById('buyHdBtn').addEventListener('click',    function(){ buyEgg('hd',    this); });
+document.getElementById('buyBasicBtn').addEventListener('click', function() { buyEgg('basic', this); });
+document.getElementById('buyHdBtn').addEventListener('click',    function() { buyEgg('hd',    this); });
 
-updateBuyButtons(parseInt(spendableEl ? spendableEl.textContent : '0', 10));
+/* ---- init nudge on load ---- */
+updateBuyButtons({{ spendable }});
 
-/* auto-resume polling for eggs already mid-hatch when page loads */
+/* ---- resume polling for any in-progress eggs ---- */
+{% for p in pets %}{% if not p.hatched and p.status != 'pending' %}
 (function() {
-  document.querySelectorAll('[data-hatch]').forEach(function(btn) {
-    if (btn.disabled) startPolling(parseInt(btn.dataset.hatch, 10));
-  });
-})();
+  var id = {{ p.pk }};
+  setEggStage(id, '{{ p.status }}');
+  startPolling(id);
+}());
+{% endif %}{% endfor %}
 </script>
 {% endblock %}
