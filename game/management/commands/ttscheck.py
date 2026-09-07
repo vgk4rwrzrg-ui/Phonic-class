@@ -10,6 +10,21 @@ from django.core.management.base import BaseCommand
 from game import tts
 
 
+PHONEME_PROBE_A = '<speak><phoneme alphabet="ipa" ph="m\u02d0">s</phoneme></speak>'
+PHONEME_PROBE_B = "<speak>s</speak>"
+
+
+def phoneme_tags_honored():
+    """True if the configured voice actually renders IPA phoneme tags.
+
+    Synthesizes the same text once with a deliberately WRONG phoneme ("mmm")
+    and once plain; identical audio bytes mean the voice is ignoring
+    <phoneme>, so phonics letters would come out as respellings or names.
+    """
+    from game.tts import _synth_ssml
+    return _synth_ssml(PHONEME_PROBE_A) != _synth_ssml(PHONEME_PROBE_B)
+
+
 class Command(BaseCommand):
     help = ("Check Google TTS credentials and do one live synthesis. "
             "Run this as the SAME user the web app runs as, e.g.: "
@@ -48,6 +63,21 @@ class Command(BaseCommand):
             w(self.style.SUCCESS(f"  OK ({len(raw)} bytes) -> {path}  (listen to it!)"))
         except Exception:
             self.stderr.write("  FAILED:")
+            self.stderr.write(traceback.format_exc())
+
+        w("\nTest 1b: does this voice HONOR <phoneme> tags? (2 extra syntheses)")
+        try:
+            if phoneme_tags_honored():
+                w(self.style.SUCCESS(
+                    "  HONORED - letters will use true phonic sounds"))
+            else:
+                self.stderr.write(
+                    "  IGNORED! This voice reads the fallback text, so letters "
+                    "come out as\n  respellings or names. Unset GOOGLE_TTS_VOICE "
+                    "(or set a Wavenet/Standard\n  voice), then run: "
+                    "python manage.py makevoices --force")
+        except Exception:
+            self.stderr.write("  probe FAILED:")
             self.stderr.write(traceback.format_exc())
 
         w("\nTest 2: whole word 'sun'...")

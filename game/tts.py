@@ -13,8 +13,8 @@ import os
 GRAPHEME_IPA = {
     "A": "æ", "B": "bə", "C": "kə", "D": "də", "E": "ɛ", "F": "fː", "G": "ɡə",
     "H": "hə", "I": "ɪ", "J": "ʤə", "K": "kə", "L": "lː", "M": "mː", "N": "nː",
-    "O": "ɑː", "P": "pə", "Q": "kwə", "R": "ɹː", "S": "sː", "T": "tə", "U": "ʌ",
-    "V": "vː", "W": "wə", "X": "ksː", "Y": "jə", "Z": "zː",
+    "O": "ɑː", "P": "pə", "Q": "kwə", "R": "ɹː", "S": "sss", "T": "tə", "U": "ʌ",
+    "V": "vː", "W": "wə", "X": "ksss", "Y": "jə", "Z": "zzz",
     "SH": "ʃː", "CH": "ʧə", "TH": "θː", "CK": "kə", "NG": "ŋː", "QU": "kwə",
     "WH": "wə", "PH": "fː",
     "EE": "iː", "OO": "uː", "AI": "eɪ", "AY": "eɪ", "EA": "iː", "OA": "oʊ",
@@ -36,13 +36,13 @@ TRIGRAPHS = {"igh", "tch", "dge", "ear", "air"}
 # LETTER_SOUNDS / DIGRAPH_SOUNDS / TRIGRAPH_SOUNDS fallback maps in game.html.
 # This text goes INSIDE the SSML <phoneme> tag: voices that honor the tag use
 # the IPA above, and any voice that ignores the tag reads this respelling —
-# so the worst case is "suh", never the letter name "ess".
+# so the worst case is "sss", never the letter name "ess".
 GRAPHEME_SAY = {
     "A": "ah", "B": "buh", "C": "kuh", "D": "duh", "E": "eh", "F": "fuh",
     "G": "guh", "H": "huh", "I": "ih", "J": "juh", "K": "kuh", "L": "luh",
     "M": "muh", "N": "nuh", "O": "ah", "P": "puh", "Q": "kwuh", "R": "ruh",
-    "S": "suh", "T": "tuh", "U": "uh", "V": "vuh", "W": "wuh", "X": "kss",
-    "Y": "yuh", "Z": "zuh",
+    "S": "sss", "T": "tuh", "U": "uh", "V": "vuh", "W": "wuh", "X": "kuh-sss",
+    "Y": "yuh", "Z": "zzz",
     "SH": "shh", "CH": "chuh", "TH": "thuh", "CK": "kuh", "NG": "ing",
     "QU": "kwuh", "WH": "wuh", "PH": "fuh",
     "EE": "ee", "OO": "oo", "AI": "ay", "AY": "ay", "EA": "ee", "OA": "oh",
@@ -105,7 +105,7 @@ def _synth_ssml(ssml):
 def synthesize(grapheme):
     """Return MP3 audio bytes for a single grapheme via Google Cloud TTS.
 
-    Continuants use a length mark (e.g. "sː" -> "sss").  Some voices reject
+    Continuants repeat the segment or use a length mark (e.g. "sss").  Some voices reject
     length marks on consonants with INVALID_ARGUMENT; if that happens we
     retry with a slowed-down plain phoneme so the sound still generates.
     """

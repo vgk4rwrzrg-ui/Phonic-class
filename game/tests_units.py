@@ -3,11 +3,12 @@
 Run with: python manage.py test game.tests_units
 """
 import json
+from unittest import mock
 from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from game import jsonapi, phrases, tts
 from game.models import BossFight, Class, GraphemeSound, Kid, SoundMiss, Word
@@ -267,8 +268,8 @@ class PhonicSynthesisTests(TestCase):
         with patch("game.tts._synth_ssml", return_value=b"MP3") as m:
             tts.synthesize("S")
         ssml = m.call_args[0][0]
-        self.assertIn('ph="s\u02d0"', ssml)       # IPA "sss" phoneme
-        self.assertIn(">suh<", ssml)               # tag-ignoring voices say this
+        self.assertIn('ph="sss"', ssml)          # repeated-sibilant phoneme
+        self.assertIn(">sss<", ssml)               # tag-ignoring voices say this
         self.assertNotIn(">S<", ssml)              # never the bare letter -> "ess"
 
     def test_synthesize_retry_strips_length_mark_keeps_respelling(self):
@@ -292,3 +293,39 @@ class PhonicSynthesisTests(TestCase):
             self.assertFalse(tts.voice_supports_phonemes(bad), bad)
         for good in ("en-US-Wavenet-F", "en-GB-Standard-A"):
             self.assertTrue(tts.voice_supports_phonemes(good), good)
+
+class PhonemeRegressionTests(SimpleTestCase):
+    """S/Z/X must never synthesize as letter names or vowel-y respellings."""
+
+    def _ssml_for(self, letter):
+        with mock.patch("game.tts._synth_ssml", return_value=b"mp3") as m:
+            tts.synthesize(letter)
+        return m.call_args[0][0]
+
+    def test_s_uses_repeated_sibilant(self):
+        ssml = self._ssml_for("S")
+        self.assertIn('ph="sss"', ssml)
+        self.assertIn(">sss<", ssml)
+
+    def test_z_uses_repeated_sibilant(self):
+        ssml = self._ssml_for("Z")
+        self.assertIn('ph="zzz"', ssml)
+        self.assertIn(">zzz<", ssml)
+
+    def test_x_is_k_plus_long_s(self):
+        ssml = self._ssml_for("X")
+        self.assertIn('ph="ksss"', ssml)
+        self.assertIn(">kuh-sss<", ssml)
+        self.assertNotIn("\u02d0", ssml)  # no length marks left to reject
+
+
+class TtsCheckPhonemeProbeTests(SimpleTestCase):
+    def test_probe_true_when_audio_differs(self):
+        from game.management.commands.ttscheck import phoneme_tags_honored
+        with mock.patch("game.tts._synth_ssml", side_effect=[b"aaa", b"bbb"]):
+            self.assertTrue(phoneme_tags_honored())
+
+    def test_probe_false_when_voice_ignores_tags(self):
+        from game.management.commands.ttscheck import phoneme_tags_honored
+        with mock.patch("game.tts._synth_ssml", return_value=b"same"):
+            self.assertFalse(phoneme_tags_honored())
