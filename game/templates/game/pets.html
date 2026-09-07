@@ -218,7 +218,7 @@
   <div class="pet-grid" id="petGrid">
     {% for p in pets %}
     <div class="pet-card{% if p.is_companion %} companion{% endif %}{% if p.tier == 'hd' %} hd-pet{% endif %}"
-         data-id="{{ p.pk }}" data-tier="{{ p.tier }}">
+         data-id="{{ p.pk }}" data-tier="{{ p.tier }}" data-phrase-count="{{ p.phrases_json|length }}">
       {% if p.hatched %}
         <img class="pet-img" src="/petimage/{{ p.pk }}/" alt="{{ p.name }}">
         <div class="pet-name">{{ p.name }}{% if p.tier == 'hd' %}<span class="hd-badge">LEGENDARY</span>{% endif %}</div>
@@ -356,8 +356,9 @@ function addEggCard(petId, tier) {
   if (!grid) return;
   var div = document.createElement('div');
   div.className = 'pet-card' + (isHd ? ' hd-pet' : '');
-  div.dataset.id   = petId;
-  div.dataset.tier = tier;
+  div.dataset.id          = petId;
+  div.dataset.tier        = tier;
+  div.dataset.phraseCount = 5;
   div.innerHTML =
     '<div class="egg-wrapper" id="egg-' + petId + '">' +
       '<span class="egg-face" id="egg-face-' + petId + '">&#129370;</span>' +
@@ -480,11 +481,10 @@ function bindCard(card) {
   if (talkBtn) {
     talkBtn.addEventListener('click', function() {
       var petId = talkBtn.dataset.talk;
-      fetch('/petsound/' + petId + '/0/')
-        .then(function(r) {
-          if (r.ok) showToast('&#128172; Your pet speaks!');
-          else showToast('Pet voice coming soon!', 'info');
-        });
+      var phrases = card.dataset.phraseCount ? parseInt(card.dataset.phraseCount, 10) : 5;
+      var idx = Math.floor(Math.random() * phrases);
+      var audio = new Audio('/petsound/' + petId + '/' + idx + '/');
+      audio.play().catch(function() {});
     });
   }
 
