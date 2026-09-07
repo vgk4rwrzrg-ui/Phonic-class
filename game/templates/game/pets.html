@@ -62,7 +62,7 @@
   .buy-col { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 
   /* wrapper catches taps even when button is disabled */
-  .buy-btn-tap { display: contents; cursor: pointer; }
+  .buy-btn-tap { display: block; cursor: pointer; }
 
   .buy-btn {
     font-size: 1rem; font-weight: 800; padding: 14px 12px;
@@ -70,7 +70,7 @@
     cursor: pointer; min-height: 58px; width: 100%;
     transition: filter .15s, transform .1s;
     line-height: 1.3; text-align: center;
-    pointer-events: none; /* tap handled by wrapper */
+    pointer-events: auto;
   }
   .buy-btn:disabled { opacity: .42; }
   .buy-btn-basic { background: var(--accent); color: #fff; }
@@ -339,15 +339,18 @@ function handleBuyTap(tier) {
   buyEgg(tier);
 }
 
-function setupTap(tapId, tier) {
-  var el = document.getElementById(tapId);
-  el.addEventListener('click', function() { handleBuyTap(tier); });
-  el.addEventListener('keydown', function(e) {
+function setupTap(tapId, btnId, tier) {
+  var wrapper = document.getElementById(tapId);
+  var btn     = document.getElementById(btnId);
+  function onTap(e) { e.stopPropagation(); handleBuyTap(tier); }
+  if (wrapper) wrapper.addEventListener('click', onTap);
+  if (btn)     btn.addEventListener('click', onTap);
+  if (wrapper) wrapper.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBuyTap(tier); }
   });
 }
-setupTap('basicTap', 'basic');
-setupTap('hdTap', 'hd');
+setupTap('basicTap', 'buyBasicBtn', 'basic');
+setupTap('hdTap',    'buyHdBtn',    'hd');
 
 /* ---- buy egg ---- */
 function buyEgg(tier) {
