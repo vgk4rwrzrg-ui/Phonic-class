@@ -42,11 +42,16 @@ def _fail(pet, error):
 
 
 def _generate_image(pet):
-    """Call the configured image backend; return (raw_bytes, error_string)."""
+    """Call the configured image backend; return (raw_bytes, error_string).
+
+    HD/Legendary pets are routed through the higher-quality backend path by
+    passing is_hd=True so generate_pet_image can choose Imagen over DeepAI
+    standard and send the correct resolution request.
+    """
     from game.pet_services import generate_pet_image
 
     try:
-        return generate_pet_image(pet.prompt), None
+        return generate_pet_image(pet.prompt, is_hd=(pet.tier == "hd")), None
     except RuntimeError as e:
         if str(e) == "no_api_key":
             logger.error(

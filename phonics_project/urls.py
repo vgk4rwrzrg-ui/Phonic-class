@@ -44,6 +44,7 @@ urlpatterns = [
          name="api_pet_companion"),
     path("petimage/<int:pet_id>/", views.pet_image, name="pet_image"),
     path("petsound/<int:pet_id>/<int:idx>/", views.pet_sound, name="pet_sound"),
+    path("pethdsound/<int:pet_id>/<int:idx>/", views.pet_human_sound, name="pet_human_sound"),
 
     # Teacher
     path("teacher/", views.dashboard, name="dashboard"),

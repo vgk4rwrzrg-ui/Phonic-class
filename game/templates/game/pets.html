@@ -218,7 +218,7 @@
   <div class="pet-grid" id="petGrid">
     {% for p in pets %}
     <div class="pet-card{% if p.is_companion %} companion{% endif %}{% if p.tier == 'hd' %} hd-pet{% endif %}"
-         data-id="{{ p.pk }}" data-tier="{{ p.tier }}" data-phrase-count="{{ p.phrases_json|length }}">
+         data-id="{{ p.pk }}" data-tier="{{ p.tier }}" data-phrase-count="{{ p.phrase_count }}">
       {% if p.hatched %}
         <img class="pet-img" src="/petimage/{{ p.pk }}/" alt="{{ p.name }}">
         <div class="pet-name">{{ p.name }}{% if p.tier == 'hd' %}<span class="hd-badge">LEGENDARY</span>{% endif %}</div>
@@ -520,7 +520,8 @@ function bindCard(card) {
   if (sayingSel) {
     sayingSel.addEventListener('change', function() {
       var petId = sayingSel.dataset.saying;
-      fetch('/petsound/' + petId + '/' + parseInt(sayingSel.value, 10) + '/');
+      var idx = parseInt(sayingSel.value, 10);
+      new Audio('/pethdsound/' + petId + '/' + idx + '/').play().catch(function() {});
     });
   }
 }

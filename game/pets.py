@@ -99,7 +99,8 @@ VISUAL_TRAITS = [
     "element_theme",
 ]
 
-IMAGE_SIZE = 512  # pets are always exactly 512x512
+IMAGE_SIZE = 512      # basic pets are 512x512
+IMAGE_SIZE_HD = 768   # legendary pets get higher resolution
 
 PROMPT_RULES = (
     "Adorable kid-friendly cartoon baby pet for a children's phonics game, "
@@ -109,6 +110,19 @@ PROMPT_RULES = (
     "dark, occult, satanic, demonic, violent, sad, or frightening elements; "
     "no weapons, no blood, no skulls, no text, no humans. "
     "Single centered creature, square composition."
+)
+
+# HD / Legendary prompt rules: painterly-realistic style, still kid-safe.
+PROMPT_RULES_HD = (
+    "A LEGENDARY creature for a children's phonics game. "
+    "Painterly digital illustration style — soft natural lighting, subtle fur or "
+    "scale texture, gentle depth of field, rich but warm colors. "
+    "The style should feel like a high-quality children's book illustration: "
+    "realistic enough to look special, still gentle and whimsical. "
+    "STRICT RULES: G-rated and safe for young children; absolutely NO scary, "
+    "dark, occult, satanic, demonic, violent, sad, or frightening elements; "
+    "no weapons, no blood, no skulls, no text, no humans. "
+    "Single centered creature, square composition, clean bright background."
 )
 
 
@@ -164,6 +178,49 @@ def build_prompt(traits):
         species_rule += " \u2014 NOT a dragon and not any other animal"
     return (f"A cute cartoon baby {t['species']}: " + "; ".join(parts) + ". "
             + species_rule + ". " + PROMPT_RULES)
+
+
+def build_prompt_hd(traits):
+    """HD/Legendary image prompt: same visual traits, painterly realistic style.
+
+    Uses PROMPT_RULES_HD so the image generator produces a richer, more
+    detailed illustration rather than the flat sticker look of basic eggs.
+    Species is stated three times (start, middle, end) to anchor image models
+    that drift toward dragons on complex prompts.
+    """
+    parts = []
+    t = traits
+    parts.append(f"a {t['size']}, {t['body_shape']} {t['species']}")
+    parts.append(f"{t['body_color']} with {t['secondary_color']} accents and a "
+                 f"{t['belly_color']} belly")
+    if t["pattern"] != "no pattern":
+        parts.append(f"{t['pattern_color']} {t['pattern']}")
+    parts.append(f"{t['eye_shape']} {t['eye_color']} eyes")
+    parts.append(f"{t['ear_type']} ears, {t['tail_type']} tail")
+    if t["wing_type"] != "no wings":
+        parts.append(t["wing_type"])
+    parts.append(f"{t['head_feature']} on its head, {t['cheek_feature']}")
+    parts.append(f"{t['nose_type']}, {t['mouth_style']}")
+    if t["tooth_style"] != "no teeth showing":
+        parts.append(t["tooth_style"])
+    if t["whiskers"] != "no whiskers":
+        parts.append(t["whiskers"])
+    parts.append(f"{t['paw_type']}, {t['fur_texture']}")
+    if t["glow_feature"] != "no glow":
+        parts.append(t["glow_feature"])
+    if t["sparkle_level"] != "no sparkles":
+        parts.append(t["sparkle_level"])
+    if t["marking"] != "no special marking":
+        parts.append(f"a {t['marking']}")
+    if t["accessory"] != "no accessory":
+        parts.append(f"wearing a {t['accessory_color']} {t['accessory']}")
+    parts.append(f"surrounded by {t['element_theme']}")
+    parts.append(f"in a beautifully lit {t['habitat']} setting")
+    species_rule = f"The creature must clearly be a {t['species']}"
+    if "dragon" not in t["species"]:
+        species_rule += " — NOT a dragon and not any other animal"
+    return (f"A legendary {t['species']}: " + "; ".join(parts) + ". "
+            + species_rule + ". " + PROMPT_RULES_HD)
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +305,7 @@ def new_pet_blueprint(is_hd=False):
     traits = roll_traits(rng)
     bp = {
         "traits": traits,
-        "prompt": build_prompt(traits),
+        "prompt": build_prompt_hd(traits) if is_hd else build_prompt(traits),
         "name": make_name(rng),
         "phrases": make_phrases(rng),
         "voice": make_voice(rng),
