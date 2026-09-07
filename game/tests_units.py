@@ -422,10 +422,13 @@ class FetchSeedSoundsTests(SimpleTestCase):
 
     def test_processing_uses_bundled_ffmpeg_with_trim_and_loudnorm(self):
         from game.management.commands import fetchseedsounds as f
-        with mock.patch.object(f, "_run_ffmpeg") as run:
+        with mock.patch.object(f, "_run_ffmpeg") as run, \
+             mock.patch.object(f.os.path, "exists", return_value=True), \
+             mock.patch.object(f.os.path, "getsize", return_value=9999):
             f.process_ogg_to_mp3("in.ogg", "out.mp3")
         args = run.call_args[0][0]
         self.assertIn("silenceremove", " ".join(args))
+        self.assertIn("-40dB", " ".join(args))      # strict chain tried first
         self.assertIn("loudnorm", " ".join(args))
 
     def test_concat_builds_two_input_filter(self):
@@ -527,18 +530,38 @@ class FetchSeedSoundsProcessingTests(SimpleTestCase):
             self.assertEqual(bad, [items[0][1]])
             self.assertFalse(os.path.exists(os.path.join(tmp, items[0][1])))
 
-    def test_process_falls_back_to_two_step_conversion(self):
+    def test_process_falls_back_through_gentler_chains(self):
+        """-40dB assert-crash -> -50dB trim succeeds; ladder stops there."""
         _, f = self._cmd()
         attempts = []
         def fake_run(args):
-            attempts.append(list(args))
-            if len(attempts) == 1:
+            attempts.append(" ".join(args))
+            if "-40dB" in attempts[-1]:
                 raise subprocess.CalledProcessError(-6, "ffmpeg")
-        with mock.patch.object(f, "_run_ffmpeg", side_effect=fake_run):
+        with mock.patch.object(f, "_run_ffmpeg", side_effect=fake_run), \
+             mock.patch.object(f.os.path, "exists", return_value=True), \
+             mock.patch.object(f.os.path, "getsize", return_value=9999):
             f.process_ogg_to_mp3("in.ogg", "out.mp3")
-        self.assertEqual(len(attempts), 3)           # 1 direct + decode + filter
-        self.assertIn("out.mp3.tmp.wav", attempts[1])
-        self.assertIn("out.mp3.tmp.wav", attempts[2])
+        self.assertEqual(len(attempts), 2)
+        self.assertIn("-50dB", attempts[1])
+
+    def test_process_rejects_near_empty_output(self):
+        """A chain that 'succeeds' but trims away the sound is not accepted."""
+        _, f = self._cmd()
+        sizes = iter([300, 300, 9999])   # first two chains produce empty husks
+        with mock.patch.object(f, "_run_ffmpeg"), \
+             mock.patch.object(f.os.path, "exists", return_value=True), \
+             mock.patch.object(f.os.path, "getsize", side_effect=sizes), \
+             mock.patch.object(f.os, "remove"):
+            f.process_ogg_to_mp3("in.ogg", "out.mp3")   # loudnorm-only wins
+
+    def test_process_raises_when_every_chain_fails(self):
+        _, f = self._cmd()
+        with mock.patch.object(f, "_run_ffmpeg",
+                               side_effect=subprocess.CalledProcessError(-6, "ffmpeg")), \
+             mock.patch.object(f.os.path, "exists", return_value=False):
+            with self.assertRaises(subprocess.CalledProcessError):
+                f.process_ogg_to_mp3("in.ogg", "out.mp3")
 
     def test_download_rejects_non_ogg_body(self):
         cmd, f = self._cmd()

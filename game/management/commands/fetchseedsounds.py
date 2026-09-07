@@ -198,6 +198,20 @@ CLEAN_ARGS = ["-af",
     "stop_periods=1:stop_threshold=-40dB,loudnorm=I=-16:TP=-1.5",
     "-ac", "1", "-ar", "44100", "-b:a", "64k"]
 
+# Quiet fricatives (SH's hiss) fall below -40dB, so that trim can swallow the
+# whole recording and feeding loudnorm an empty stream SIGABRTs ffmpeg 7.0
+# (assert best_input >= 0). Fall back through gentler variants instead.
+FALLBACK_CHAINS = [
+    ["-af",
+     "silenceremove=start_periods=1:start_threshold=-50dB:"
+     "stop_periods=1:stop_threshold=-50dB,loudnorm=I=-16:TP=-1.5",
+     "-ac", "1", "-ar", "44100", "-b:a", "64k"],
+    ["-af", "loudnorm=I=-16:TP=-1.5",
+     "-ac", "1", "-ar", "44100", "-b:a", "64k"],
+]
+
+MIN_MP3_BYTES = 2000  # ~0.25s at 64kbps; smaller means the trim ate the sound
+
 
 def _run_ffmpeg(args):
     subprocess.run([_ffmpeg_path(), "-y", *args], check=True, timeout=60,
@@ -213,24 +227,24 @@ def looks_like_ogg(path):
         return False
 
 
-def process_ogg_to_mp3(ogg_path, mp3_path):
-    """Trim silence, normalise loudness, downmix to a small mono MP3.
-
-    Some source files trip asserts inside ffmpeg's one-shot filter path,
-    so on failure retry as two steps: plain decode to WAV, then filter.
-    """
+def _try_chain(ogg_path, mp3_path, chain):
+    """Run one filter chain; True only if it produced a real, audible file."""
     try:
-        _run_ffmpeg(["-i", ogg_path, *CLEAN_ARGS, mp3_path])
-        return
+        _run_ffmpeg(["-i", ogg_path, *chain, mp3_path])
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        pass
-    wav_path = mp3_path + ".tmp.wav"
-    try:
-        _run_ffmpeg(["-i", ogg_path, "-ac", "1", "-ar", "44100", wav_path])
-        _run_ffmpeg(["-i", wav_path, *CLEAN_ARGS, mp3_path])
-    finally:
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
+        return False
+    return os.path.exists(mp3_path) and os.path.getsize(mp3_path) >= MIN_MP3_BYTES
+
+
+def process_ogg_to_mp3(ogg_path, mp3_path):
+    """Trim silence + normalise loudness, degrading gracefully for quiet
+    sounds where the aggressive trim would erase or crash on the audio."""
+    for chain in [CLEAN_ARGS, *FALLBACK_CHAINS]:
+        if _try_chain(ogg_path, mp3_path, chain):
+            return
+    if os.path.exists(mp3_path):
+        os.remove(mp3_path)
+    raise subprocess.CalledProcessError(1, "ffmpeg (all filter chains failed)")
 
 
 def concat_mp3s(parts, out_path):
