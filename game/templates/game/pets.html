@@ -194,28 +194,21 @@
   <div class="buy-section">
     <div class="buy-row">
       <div class="buy-col">
-        <div class="buy-btn-tap" id="basicTap" role="button" tabindex="0"
-             onclick="handleBuyTap('basic')"
-             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleBuyTap('basic');}"
-             aria-label="Buy Basic Egg for {{ egg_cost }} points">
-          <button class="buy-btn buy-btn-basic" id="buyBasicBtn" tabindex="-1" type="button">
-            &#129370; Basic Egg<br><small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
-          </button>
-        </div>
+        <button class="buy-btn buy-btn-basic" id="buyBasicBtn" type="button"
+                onclick="buyTap('basic')">
+          &#129370; Basic Egg<br>
+          <small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
+        </button>
         <p class="points-nudge" id="basicNudge" aria-live="polite"></p>
         <p class="buy-desc">A mystery creature hatches!</p>
       </div>
       <div class="buy-col">
-        <div class="buy-btn-tap" id="hdTap" role="button" tabindex="0"
-             onclick="handleBuyTap('hd')"
-             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleBuyTap('hd');}"
-             aria-label="Buy Legendary Egg for {{ hd_cost }} points">
-          <button class="buy-btn buy-btn-hd" id="buyHdBtn" tabindex="-1" type="button">
-            &#127775; Legendary Egg<br>
-            <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
-              <span class="hd-badge">LEGENDARY</span></small>
-          </button>
-        </div>
+        <button class="buy-btn buy-btn-hd" id="buyHdBtn" type="button"
+                onclick="buyTap('hd')">
+          &#127775; Legendary Egg<br>
+          <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
+            <span class="hd-badge">LEGENDARY</span></small>
+        </button>
         <p class="points-nudge" id="hdNudge" aria-live="polite"></p>
         <p class="buy-desc">Amazing creature + 5 fun sayings!</p>
       </div>
@@ -288,74 +281,53 @@ function getSpendable() { return parseInt(spendableEl.textContent, 10) || 0; }
 function updatePointsUI(pts) {
   spendableEl.textContent = pts;
 
-  /* progress chips */
   var chips = document.getElementById('progressChips');
-  var basicNeeded = Math.max(0, EGG_COST - pts);
-  var hdNeeded    = Math.max(0, HD_COST - pts);
-  var html = '';
-  if (basicNeeded > 0) {
-    html += '<span class="prog-chip">' + basicNeeded + ' more for Basic &#129370;</span>';
-  } else {
-    html += '<span class="prog-chip unlocked">Basic egg ready &#10003;</span>';
+  if (chips) {
+    var bn = Math.max(0, EGG_COST - pts);
+    var hn = Math.max(0, HD_COST - pts);
+    chips.innerHTML =
+      (bn > 0 ? '<span class="prog-chip">' + bn + ' more for Basic</span>'
+              : '<span class="prog-chip unlocked">Basic egg ready &#10003;</span>') +
+      (hn > 0 ? '<span class="prog-chip">' + hn + ' more for Legendary</span>'
+              : '<span class="prog-chip unlocked">Legendary ready &#11088;</span>');
   }
-  if (hdNeeded > 0) {
-    html += '<span class="prog-chip">' + hdNeeded + ' more for Legendary &#127775;</span>';
-  } else {
-    html += '<span class="prog-chip unlocked">Legendary ready &#11088;</span>';
-  }
-  chips.innerHTML = html;
 
-  /* nudge text under buttons */
   var basicNudge = document.getElementById('basicNudge');
   var hdNudge    = document.getElementById('hdNudge');
-  if (basicNeeded > 0) {
-    basicNudge.textContent = basicNeeded + ' more points to go! \uD83D\uDCAA';
-  } else {
-    basicNudge.textContent = '';
-  }
-  if (hdNeeded > 0) {
-    hdNudge.textContent = hdNeeded + ' more points to go Legendary! \u2B50';
-  } else {
-    hdNudge.innerHTML = 'You unlocked Legendary! <span style="color:oklch(62% 0.18 60)">\u2728</span>';
-  }
+  var bn2 = Math.max(0, EGG_COST - pts);
+  var hn2 = Math.max(0, HD_COST  - pts);
+  if (basicNudge) basicNudge.textContent = bn2 > 0 ? bn2 + ' more points needed' : '';
+  if (hdNudge)    hdNudge.textContent    = hn2 > 0 ? hn2 + ' more points for Legendary' : 'Legendary unlocked!';
 
-  /* visual affordance — never set native disabled so clicks always fire */
   var basicBtn = document.getElementById('buyBasicBtn');
   var hdBtn    = document.getElementById('buyHdBtn');
-  var basicTap = document.getElementById('basicTap');
-  var hdTap    = document.getElementById('hdTap');
-
   if (basicBtn) basicBtn.classList.toggle('btn-dim', pts < EGG_COST);
   if (hdBtn)    hdBtn.classList.toggle('btn-dim',    pts < HD_COST);
-  if (basicTap) basicTap.classList.toggle('disabled', pts < EGG_COST);
-  if (hdTap)    hdTap.classList.toggle('disabled',    pts < HD_COST);
 }
 
-/* ---- tap handler — called by onclick on the wrapper divs ---- */
-function handleBuyTap(tier) {
-  var pts    = getSpendable();
-  var cost   = (tier === 'hd') ? HD_COST : EGG_COST;
-  var name   = (tier === 'hd') ? 'Legendary Egg' : 'Basic Egg';
-  var needed = cost - pts;
-  if (needed > 0) {
-    showToast('You need ' + needed + ' more point' + (needed === 1 ? '' : 's') + ' for the ' + name + '!', 'info');
+/* ---- buy tap ---- */
+function buyTap(tier) {
+  var pts   = getSpendable();
+  var cost  = (tier === 'hd') ? HD_COST : EGG_COST;
+  var label = (tier === 'hd') ? 'Legendary Egg' : 'Basic Egg';
+  var need  = cost - pts;
+  if (need > 0) {
+    showToast('You need ' + need + ' more point' + (need === 1 ? '' : 's') + ' for the ' + label + '!', 'info');
     return;
   }
-  buyEgg(tier);
-}
-
-/* ---- buy egg ---- */
-function buyEgg(tier) {
-  var tapEl = document.getElementById(tier === 'hd' ? 'hdTap' : 'basicTap');
-  tapEl.classList.add('disabled');
+  var btn = document.getElementById(tier === 'hd' ? 'buyHdBtn' : 'buyBasicBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
   post('/buy-egg/', { tier: tier }).then(function(d) {
-    if (d.error) { showToast(d.error, 'err'); updatePointsUI(getSpendable()); return; }
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    if (d.error) { showToast(d.error, 'err'); return; }
     updatePointsUI(d.spendable);
     addEggCard(d.pet_id, tier);
-    showToast(tier === 'hd' ? '\u2728 Legendary egg acquired!' : '\uD83E\uDD5A Egg added!');
-  }).catch(function() { showToast('Something went wrong', 'err'); updatePointsUI(getSpendable()); });
+    showToast(tier === 'hd' ? 'Legendary egg acquired!' : 'Egg added!');
+  }).catch(function() {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    showToast('Something went wrong, try again', 'err');
+  });
 }
-
 /* ---- helpers ---- */
 function post(url, body) {
   return fetch(url, {
