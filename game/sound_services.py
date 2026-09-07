@@ -132,15 +132,29 @@ def phrase_audio_path(slug):
 # Bulk export
 # ---------------------------------------------------------------------------
 
+def _stream_into_zip(zf, arcname, read_fn, chunk_size=65536):
+    """Write data from read_fn into an open ZipFile entry in chunks."""
+    try:
+        with zf.open(arcname, "w", force_zip64=True) as dst:
+            while True:
+                chunk = read_fn(chunk_size)
+                if not chunk:
+                    break
+                dst.write(chunk)
+    except (FileNotFoundError, OSError):
+        pass  # missing file — skip silently
+
+
 def _zip_letter_sounds(zf, classroom):
     for gs in GraphemeSound.objects.filter(
             Q(classroom__isnull=True) | Q(classroom=classroom)):
         if not gs.audio:
             continue
+        tag = "custom" if gs.source == "custom" else "google"
         try:
-            tag = "custom" if gs.source == "custom" else "google"
-            zf.writestr(f"letters/{gs.grapheme}_{tag}.mp3", gs.audio.read())
-        except FileNotFoundError:
+            with gs.audio.open("rb") as src:
+                _stream_into_zip(zf, f"letters/{gs.grapheme}_{tag}.mp3", src.read)
+        except (FileNotFoundError, OSError):
             continue
 
 
@@ -149,8 +163,9 @@ def _zip_word_sounds(zf, classroom):
         if not ws.audio:
             continue
         try:
-            zf.writestr(f"words/{ws.word}_{ws.source}.mp3", ws.audio.read())
-        except FileNotFoundError:
+            with ws.audio.open("rb") as src:
+                _stream_into_zip(zf, f"words/{ws.word}_{ws.source}.mp3", src.read)
+        except (FileNotFoundError, OSError):
             continue
 
 
@@ -160,13 +175,22 @@ def _zip_phrases(zf):
         return
     for name in sorted(os.listdir(pdir)):
         if name.endswith(".mp3"):
-            zf.write(os.path.join(pdir, name), f"phrases/{name}")
+            path = os.path.join(pdir, name)
+            try:
+                with open(path, "rb") as src:
+                    _stream_into_zip(zf, f"phrases/{name}", src.read)
+            except (FileNotFoundError, OSError):
+                continue
 
 
 def build_audio_zip(classroom):
-    """Zip every letter/word/phrase audio file this class can hear."""
+    """Zip every letter/word/phrase audio file this class can hear.
+
+    Files are streamed in chunks to avoid loading all audio into memory
+    at once; a classroom with many recordings will not cause an OOM spike.
+    """
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         _zip_letter_sounds(zf, classroom)
         _zip_word_sounds(zf, classroom)
         _zip_phrases(zf)

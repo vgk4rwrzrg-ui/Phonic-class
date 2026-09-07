@@ -31,15 +31,21 @@ def pet_dict(p):
         "name": p.name,
         "hatched": p.hatched,
         "is_companion": p.is_companion,
+        "tier": p.tier,
         "traits": json.loads(p.traits_json),
         "phrases": json.loads(p.phrases_json),
+        "human_sayings": p.human_sayings if p.tier == "hd" else [],
         "image_url": f"/petimage/{p.pk}/" if p.hatched and p.image_path else None,
     }
 
 
-def create_egg(kid):
-    """Create a new un-hatched pet from a fresh random blueprint."""
-    bp = petgen.new_pet_blueprint()
+def create_egg(kid, is_hd=False):
+    """Create a new un-hatched pet from a fresh random blueprint.
+
+    is_hd=True creates a Legendary egg: higher-resolution image prompt,
+    human-readable English sayings, and the tier field set to 'hd'.
+    """
+    bp = petgen.new_pet_blueprint(is_hd=is_hd)
     return Pet.objects.create(
         kid=kid,
         name=bp["name"],
@@ -47,6 +53,8 @@ def create_egg(kid):
         prompt=bp["prompt"],
         phrases_json=json.dumps(bp["phrases"]),
         voice_json=json.dumps(bp["voice"]),
+        tier="hd" if is_hd else "basic",
+        human_sayings_json=json.dumps(bp.get("human_sayings", [])),
     )
 
 
@@ -190,7 +198,12 @@ def hatch_is_stale(pet):
 
 
 def dispatch_hatch(pet):
-    """Start the async hatch via Celery, falling back to a local thread."""
+    """Start the async hatch via Celery, falling back to a local thread.
+
+    The thread fallback calls _do_hatch directly rather than invoking the
+    Celery task as a plain function, which would bypass Celery's bind/retry
+    machinery and could silently swallow the catch-all exception guard.
+    """
     try:
         from game.tasks import hatch_pet_task
         result = hatch_pet_task.apply_async(args=[pet.pk])
@@ -198,12 +211,26 @@ def dispatch_hatch(pet):
         pet.save(update_fields=["hatch_task_id"])
         logger.info(f"Started Celery hatch task {result.id} for pet {pet.pk}")
     except Exception as e:
-        # Celery not available - use thread fallback
+        # Celery not available — use a plain thread so the app still works
+        # without a broker (SQLite + threads is the common dev/small deployment).
         logger.warning(
             f"Celery unavailable, using thread fallback for pet {pet.pk}: {e}")
 
+        pet_pk = pet.pk  # capture before the thread starts
+
         def _thread_hatch():
-            from game.tasks import hatch_pet_task
-            hatch_pet_task(pet.pk)
+            from game.tasks import _do_hatch
+            from game.models import Pet as _Pet
+            try:
+                _pet = _Pet.objects.get(pk=pet_pk)
+                _do_hatch(_pet)
+            except Exception as exc:
+                logger.exception(
+                    f"Thread hatch crashed for pet {pet_pk}: {exc}")
+                try:
+                    _pet = _Pet.objects.get(pk=pet_pk)
+                    _pet.set_hatch_status("failed")
+                except Exception:
+                    pass
 
         threading.Thread(target=_thread_hatch, daemon=True).start()

@@ -122,11 +122,6 @@ class BackendDispatchTests(SimpleTestCase):
                 pet_services.imagen_generate("p")
         self.assertEqual(str(ctx.exception), "no_image_data")
 
-    def test_views_alias_is_the_dispatcher(self):
-        """tasks + tests patch game.views._deepai_generate: keep it wired."""
-        from game import views
-        self.assertIs(views._deepai_generate, pet_services.generate_pet_image)
-
 
 class CreatureVarietyTests(SimpleTestCase):
     def test_species_vary_across_rolls(self):

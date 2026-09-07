@@ -166,7 +166,7 @@ class HatchTests(TestCase):
         _, cr, kid = _setup()
         pet = self._egg(kid)
         _login(self.client, kid)
-        with patch("game.views._deepai_generate", return_value=_png_bytes()):
+        with patch("game.pet_services.generate_pet_image", return_value=_png_bytes()):
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
         d = resp.json()
         self.assertTrue(d["ok"])
@@ -188,7 +188,7 @@ class HatchTests(TestCase):
         _, cr, kid = _setup()
         pet = self._egg(kid)
         _login(self.client, kid)
-        with patch("game.views._deepai_generate", return_value=_flat_png_bytes()):
+        with patch("game.pet_services.generate_pet_image", return_value=_flat_png_bytes()):
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
         self.assertEqual(resp.status_code, 200)
         pet.refresh_from_db()
@@ -199,7 +199,7 @@ class HatchTests(TestCase):
         _, cr, kid = _setup()
         pet = self._egg(kid)
         _login(self.client, kid)
-        with patch("game.views._deepai_generate", return_value=_png_bytes()) as m:
+        with patch("game.pet_services.generate_pet_image", return_value=_png_bytes()) as m:
             _post(self.client, f"/api/pet/hatch/{pet.pk}/")
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
             self.assertEqual(m.call_count, 1)
@@ -214,7 +214,7 @@ class HatchTests(TestCase):
         Pet.objects.filter(pk=pet.pk).update(
             hatch_status="halfway", hatch_updated=None)
         _login(self.client, kid)
-        with patch("game.views._deepai_generate", return_value=_png_bytes()) as m:
+        with patch("game.pet_services.generate_pet_image", return_value=_png_bytes()) as m:
             resp = _post(self.client, f"/api/pet/hatch/{pet.pk}/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(m.call_count, 1)

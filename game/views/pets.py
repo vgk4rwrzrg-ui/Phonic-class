@@ -33,11 +33,12 @@ def pet_area(request):
         "classroom": cr,
         "spendable": kid.spendable,
         "egg_cost": cr.egg_cost,
+        "hd_cost": cr.hd_cost,
         "pets": kid.pets.all(),
     })
 
 
-def _buy_locked(kid, egg_cost):
+def _buy_locked(kid, egg_cost, is_hd=False):
     """Atomically charge for and create one egg; returns (pet, error_resp)."""
     with transaction.atomic():
         locked = Kid.objects.select_for_update().get(pk=kid.pk)
@@ -48,21 +49,25 @@ def _buy_locked(kid, egg_cost):
                  "egg_cost": egg_cost}, status=400)
         locked.points_spent += egg_cost
         locked.save()
-        return pet_services.create_egg(locked), None
+        return pet_services.create_egg(locked, is_hd=is_hd), None
 
 
 @require_POST
 @require_kid_feature("pets_enabled", "pets disabled")
 def api_pet_buy(request, kid):
-    """Buy one egg.  Deducts egg_cost from spendable points.  Idempotent via nonce."""
+    """Buy one egg (basic or legendary).  Deducts the appropriate cost.  Idempotent via nonce."""
     cr = kid.classroom
-    nonce, seen_pet_id = read_nonce(request, "egg", kid, json_body(request))
+    data = json_body(request)
+    is_hd = (data.get("tier") == "hd")
+    egg_cost = cr.hd_cost if is_hd else cr.egg_cost
+
+    nonce, seen_pet_id = read_nonce(request, "egg", kid, data)
     if seen_pet_id:
         pet = Pet.objects.filter(pk=seen_pet_id, kid=kid).first()
         return json_ok(duplicate=True, pet=pet_dict(pet) if pet else None,
                        spendable=kid.spendable)
 
-    pet, error = _buy_locked(kid, cr.egg_cost)
+    pet, error = _buy_locked(kid, egg_cost, is_hd=is_hd)
     if error:
         return error
     store_nonce(request, "egg", kid, nonce, value=pet.pk)

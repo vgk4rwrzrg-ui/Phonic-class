@@ -223,14 +223,35 @@ def make_voice(rng=None):
     return {"language_code": lang, "voice_name": name, "pitch": pitch, "rate": rate}
 
 
-def new_pet_blueprint():
+
+# Kid-friendly human sayings for HD (Legendary) pets — spoken in English TTS
+_HD_SAYINGS = [
+    ["Let's go on an adventure!", "I love spelling with you!", "You're my best friend!",
+     "Hooray, we did it!", "Can we play again?"],
+    ["I believe in you!", "You're so smart!", "That was amazing!", "We make a great team!",
+     "I'm so happy today!"],
+    ["Yay, you spelled it!", "You're a spelling superstar!", "I knew you could do it!",
+     "That's my favourite word!", "Let's spell another one!"],
+    ["I'm so proud of you!", "You're brilliant!", "What a great day!", "We're unstoppable!",
+     "One more word, please!"],
+]
+
+
+def make_human_sayings(rng=None):
+    """Pick one set of 5 English sayings for an HD pet."""
+    rng = rng or random.Random(secrets.randbits(64))
+    return rng.choice(_HD_SAYINGS)
+
+def new_pet_blueprint(is_hd=False):
     """Everything random about a new pet, JSON-serializable."""
     rng = random.Random(secrets.randbits(64))
     traits = roll_traits(rng)
-    return {
+    bp = {
         "traits": traits,
         "prompt": build_prompt(traits),
         "name": make_name(rng),
         "phrases": make_phrases(rng),
         "voice": make_voice(rng),
+        "human_sayings": make_human_sayings(rng) if is_hd else [],
     }
+    return bp
