@@ -10,6 +10,7 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 import io
 import os
+import subprocess
 import tempfile
 from django.core.management.color import color_style
 from django.test import RequestFactory, SimpleTestCase, TestCase
@@ -483,3 +484,68 @@ class FetchSeedSoundsResumeTests(SimpleTestCase):
     def test_user_agent_identifies_app(self):
         from game.management.commands import fetchseedsounds as f
         self.assertIn("github.com/vgk4rwrzrg-ui/Phonic-class", f.Command.USER_AGENT)
+
+
+class FetchSeedSoundsProcessingTests(SimpleTestCase):
+    """One bad file must never kill the run: quarantine + resume instead."""
+
+    def _cmd(self):
+        from game.management.commands import fetchseedsounds as f
+        cmd = f.Command()
+        cmd.DELAY_SECONDS = 0
+        cmd.stdout = io.StringIO()
+        cmd.style = color_style()
+        return cmd, f
+
+    def test_corrupt_raw_file_is_quarantined_not_fatal(self):
+        cmd, f = self._cmd()
+        with tempfile.TemporaryDirectory() as tmp:
+            g, fname = sorted(f.GRAPHEME_FILES.items())[0]
+            path = os.path.join(tmp, fname)
+            open(path, "wb").write(b"<html>error page</html>")
+            with mock.patch.object(f, "process_ogg_to_mp3") as proc:
+                bad = cmd._process_graphemes(tmp, force=False)
+            proc.assert_not_called()
+            self.assertEqual(bad, [fname])
+            self.assertFalse(os.path.exists(path))  # deleted for re-download
+
+    def test_ffmpeg_crash_quarantines_and_continues(self):
+        cmd, f = self._cmd()
+        with tempfile.TemporaryDirectory() as tmp:
+            items = sorted(f.GRAPHEME_FILES.items())[:2]
+            for _, fname in items:
+                open(os.path.join(tmp, fname), "wb").write(b"OggS" + b"x" * 64)
+            calls = []
+            def boom(src, dst):
+                calls.append(dst)
+                if len(calls) == 1:
+                    raise subprocess.CalledProcessError(-6, "ffmpeg")
+            with mock.patch.object(f, "process_ogg_to_mp3", side_effect=boom), \
+                 mock.patch.object(f, "SEED_DIR", tmp):
+                bad = cmd._process_graphemes(tmp, force=True)
+            self.assertEqual(len(calls), 2)          # second file still processed
+            self.assertEqual(bad, [items[0][1]])
+            self.assertFalse(os.path.exists(os.path.join(tmp, items[0][1])))
+
+    def test_process_falls_back_to_two_step_conversion(self):
+        _, f = self._cmd()
+        attempts = []
+        def fake_run(args):
+            attempts.append(list(args))
+            if len(attempts) == 1:
+                raise subprocess.CalledProcessError(-6, "ffmpeg")
+        with mock.patch.object(f, "_run_ffmpeg", side_effect=fake_run):
+            f.process_ogg_to_mp3("in.ogg", "out.mp3")
+        self.assertEqual(len(attempts), 3)           # 1 direct + decode + filter
+        self.assertIn("out.mp3.tmp.wav", attempts[1])
+        self.assertIn("out.mp3.tmp.wav", attempts[2])
+
+    def test_download_rejects_non_ogg_body(self):
+        cmd, f = self._cmd()
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(f.requests, "Session") as S:
+                S.return_value.get.return_value = mock.Mock(
+                    status_code=200, content=b"<html>captcha</html>", headers={})
+                missing = cmd._download_all(tmp, force=False)
+            self.assertEqual(sorted(missing), sorted(f.FILE_SOURCES))
+            self.assertEqual(os.listdir(tmp), [])   # nothing bogus written

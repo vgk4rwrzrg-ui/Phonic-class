@@ -204,9 +204,33 @@ def _run_ffmpeg(args):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def looks_like_ogg(path):
+    """Cheap validity check: real files start with the OggS magic bytes."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(4) == b"OggS"
+    except OSError:
+        return False
+
+
 def process_ogg_to_mp3(ogg_path, mp3_path):
-    """Trim silence, normalise loudness, downmix to a small mono MP3."""
-    _run_ffmpeg(["-i", ogg_path, *CLEAN_ARGS, mp3_path])
+    """Trim silence, normalise loudness, downmix to a small mono MP3.
+
+    Some source files trip asserts inside ffmpeg's one-shot filter path,
+    so on failure retry as two steps: plain decode to WAV, then filter.
+    """
+    try:
+        _run_ffmpeg(["-i", ogg_path, *CLEAN_ARGS, mp3_path])
+        return
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pass
+    wav_path = mp3_path + ".tmp.wav"
+    try:
+        _run_ffmpeg(["-i", ogg_path, "-ac", "1", "-ar", "44100", wav_path])
+        _run_ffmpeg(["-i", wav_path, *CLEAN_ARGS, mp3_path])
+    finally:
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
 def concat_mp3s(parts, out_path):
@@ -259,6 +283,12 @@ class Command(BaseCommand):
         for attempt in range(self.MAX_ATTEMPTS):
             r = sess.get(url, timeout=30)
             if r.status_code == 200 and r.content:
+                expected = r.headers.get("Content-Length")
+                if expected and len(r.content) != int(expected):
+                    self.stdout.write(self.style.WARNING(
+                        f"  truncated ({len(r.content)}/{expected} bytes), retrying"))
+                    time.sleep(self.DELAY_SECONDS * (attempt + 1))
+                    continue
                 return r.content
             if r.status_code in (429, 500, 502, 503, 504):
                 wait = self._wait_seconds(r, attempt)
@@ -284,6 +314,10 @@ class Command(BaseCommand):
             if content is None:
                 missing.append(fname)
                 self.stdout.write(self.style.WARNING(f"FAILED     {fname} (will retry on next run)"))
+            elif not content.startswith(b"OggS"):
+                missing.append(fname)
+                self.stdout.write(self.style.WARNING(
+                    f"REJECTED   {fname} (not Ogg audio - server sent something else)"))
             else:
                 with open(path, "wb") as fh:
                     fh.write(content)
@@ -293,18 +327,33 @@ class Command(BaseCommand):
 
     # -- processing helpers ------------------------------------------------
 
+    def _quarantine(self, src_path, fname, bad):
+        """Delete a corrupt raw file so the next run re-downloads it."""
+        os.remove(src_path)
+        bad.append(fname)
+        self.stdout.write(self.style.WARNING(
+            f"CORRUPT    {fname} - deleted; next run will re-download it"))
+
     def _process_graphemes(self, raw_dir, force):
-        done = 0
+        bad = []
         for g, fname in sorted(GRAPHEME_FILES.items()):
             src_path = os.path.join(raw_dir, fname)
             out_path = os.path.join(SEED_DIR, f"{g}.mp3")
             if not os.path.exists(src_path):
                 continue
+            if not looks_like_ogg(src_path):
+                self._quarantine(src_path, fname, bad)
+                continue
             if force or not os.path.exists(out_path):
-                process_ogg_to_mp3(src_path, out_path)
+                try:
+                    process_ogg_to_mp3(src_path, out_path)
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    if os.path.exists(out_path):
+                        os.remove(out_path)
+                    self._quarantine(src_path, fname, bad)
+                    continue
                 self.stdout.write(f"processed  {g}.mp3")
-            done += 1
-        return done
+        return bad
 
     def _build_combos(self, force):
         for g, parts in sorted(COMBOS.items()):
@@ -325,7 +374,7 @@ class Command(BaseCommand):
         os.makedirs(raw_dir, exist_ok=True)
 
         missing = self._download_all(raw_dir, force)
-        self._process_graphemes(raw_dir, force)
+        missing += self._process_graphemes(raw_dir, force)
         self._build_combos(force)
 
         if missing:
