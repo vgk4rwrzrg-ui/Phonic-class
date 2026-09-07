@@ -353,6 +353,15 @@ class Pet(models.Model):
         except (ValueError, TypeError):
             return []
 
+    @property
+    def phrase_count(self):
+        """Number of creature phrases (always 5, but derived from storage)."""
+        import json
+        try:
+            return len(json.loads(self.phrases_json))
+        except (ValueError, TypeError):
+            return 5
+
     class Meta:
         ordering = ["-created"]
 

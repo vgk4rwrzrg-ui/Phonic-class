@@ -189,17 +189,57 @@ def _creature_phrase_path(pet, idx):
     return path
 
 
+def _human_saying_path(pet, idx):
+    """Cached English TTS mp3 for an HD pet's human saying #idx (may raise)."""
+    rel = f"petvoices/pet_{pet.pk}_hd_{idx}.mp3"
+    path = os.path.join(settings.MEDIA_ROOT, rel)
+    if not os.path.exists(path):
+        sayings = pet.human_sayings
+        if not 0 <= idx < len(sayings):
+            raise IndexError("saying index out of range")
+        audio_bytes = tts.synthesize_phrase(sayings[idx])
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(audio_bytes)
+    return path
+
+
 def pet_sound(request, pet_id, idx):
-    """Serve (generating+caching on first use) creature phrase #idx (0-4)."""
+    """Serve (generating+caching on first use) creature phrase #idx (0-4).
+
+    For HD pets the talk button always plays a creature phrase (gibberish
+    creature voice).  The saying picker uses the separate pet_human_sound
+    endpoint below to speak the selected English saying in clear English TTS.
+    """
     pet, error = _pet_media_guard(request, pet_id)
     if error:
         return error
     idx = int(idx)
-    if not 0 <= idx < len(json.loads(pet.phrases_json)):
+    phrases = json.loads(pet.phrases_json)
+    if not 0 <= idx < len(phrases):
         return JsonResponse({"error": "not found"}, status=404)
     try:
         path = _creature_phrase_path(pet, idx)
     except Exception:
         logger.exception("Pet voice synthesis failed (pet %s)", pet.pk)
+        return JsonResponse({"error": "tts unavailable"}, status=404)
+    return FileResponse(open(path, "rb"), content_type="audio/mpeg")
+
+
+def pet_human_sound(request, pet_id, idx):
+    """Serve English TTS for an HD pet's human saying #idx.
+
+    Only valid for tier='hd' pets.  Cached on first use.
+    """
+    pet, error = _pet_media_guard(request, pet_id)
+    if error:
+        return error
+    if pet.tier != "hd":
+        return JsonResponse({"error": "not an HD pet"}, status=400)
+    idx = int(idx)
+    try:
+        path = _human_saying_path(pet, idx)
+    except (IndexError, Exception):
+        logger.exception("HD pet saying synthesis failed (pet %s idx %s)", pet.pk, idx)
         return JsonResponse({"error": "tts unavailable"}, status=404)
     return FileResponse(open(path, "rb"), content_type="audio/mpeg")

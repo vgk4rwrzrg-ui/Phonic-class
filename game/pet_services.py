@@ -77,18 +77,24 @@ def deepai_image_version():
     return os.environ.get("DEEPAI_IMAGE_VERSION", DEFAULT_DEEPAI_VERSION)
 
 
-def deepai_text2img(prompt):
-    """Call DeepAI text2img; return raw image bytes.  Raises on any failure."""
+def deepai_text2img(prompt, version=None):
+    """Call DeepAI text2img; return raw image bytes.  Raises on any failure.
+
+    version overrides the DEEPAI_IMAGE_VERSION env var when supplied —
+    pass "hd" for legendary eggs to get the higher-quality DeepAI tier.
+    """
     import requests as rq
 
     api_key = os.environ.get("DEEPAI_API_KEY", "")
     if not api_key:
         raise RuntimeError("no_api_key")
+    ver = version or deepai_image_version()
+    size = petgen.IMAGE_SIZE_HD if ver == "hd" else petgen.IMAGE_SIZE
     resp = rq.post(
         "https://api.deepai.org/api/text2img",
         data={"text": prompt,
-              "image_generator_version": deepai_image_version(),
-              "width": str(petgen.IMAGE_SIZE), "height": str(petgen.IMAGE_SIZE)},
+              "image_generator_version": ver,
+              "width": str(size), "height": str(size)},
         headers={"api-key": api_key},
         timeout=60,
     )
@@ -136,22 +142,34 @@ def imagen_generate(prompt):
     return base64.b64decode(b64)
 
 
-def generate_pet_image(prompt):
+def generate_pet_image(prompt, is_hd=False):
     """Generate a pet image with the configured backend.
 
     PET_IMAGE_BACKEND: "deepai" | "imagen" | unset (auto).
-    Auto prefers DeepAI whenever DEEPAI_API_KEY is configured (the primary,
-    subscription-backed service); Imagen is the alternative when only
-    GEMINI_API_KEY exists. game.views re-exports this as _deepai_generate
-    (historical name) so tests and game.tasks keep patching one entry point.
+
+    HD/Legendary eggs always prefer Imagen (richer quality) with DeepAI HD
+    as fallback. Basic eggs prefer DeepAI standard (cheaper) with Imagen as
+    fallback when no DeepAI key is set.
     """
     backend = os.environ.get("PET_IMAGE_BACKEND", "").strip().lower()
+
+    # Explicit override: honour it for both tiers.
     if backend == "deepai":
-        return deepai_text2img(prompt)
+        version = "hd" if is_hd else deepai_image_version()
+        return deepai_text2img(prompt, version=version)
     if backend == "imagen":
         return imagen_generate(prompt)
-    # Auto: DeepAI first (subscription-friendly); Imagen only when there is
-    # no DeepAI key but a Gemini key is configured.
+
+    if is_hd:
+        # HD: Imagen first (painterly quality), DeepAI HD as fallback.
+        if os.environ.get("GEMINI_API_KEY"):
+            try:
+                return imagen_generate(prompt)
+            except Exception:
+                logger.warning("Imagen failed for HD pet, falling back to DeepAI HD")
+        return deepai_text2img(prompt, version="hd")
+
+    # Basic: DeepAI standard first; Imagen fallback when no DeepAI key.
     if os.environ.get("DEEPAI_API_KEY"):
         return deepai_text2img(prompt)
     if os.environ.get("GEMINI_API_KEY"):

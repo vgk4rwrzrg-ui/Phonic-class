@@ -17,7 +17,7 @@ from .teacher import (signup, teacher_record, teacher_delete,
                       api_teacher_settings)
 from .dashboard import dashboard
 from .pets import (pet_area, api_pet_buy, api_pet_hatch, api_pet_hatch_status,
-                   api_pet_companion, pet_image, pet_sound)
+                   api_pet_companion, pet_image, pet_sound, pet_human_sound)
 
 __all__ = [
     "kids_root", "join_class", "class_join", "picker", "logout_kid",
@@ -30,7 +30,7 @@ __all__ = [
     "teacher_audio_zip", "api_teacher_settings",
     "dashboard",
     "pet_area", "api_pet_buy", "api_pet_hatch", "api_pet_hatch_status",
-    "api_pet_companion", "pet_image", "pet_sound",
+    "api_pet_companion", "pet_image", "pet_sound", "pet_human_sound",
     "get_classroom", "get_kid",
 ]
 
