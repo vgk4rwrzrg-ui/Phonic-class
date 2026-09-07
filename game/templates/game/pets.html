@@ -1,7 +1,6 @@
 {% extends "game/base.html" %}
 {% block title %}Spell Bee &ndash; My Pets{% endblock %}
 {% block extra_head %}<style>html, body { touch-action: pan-x pan-y; }</style>{% endblock %}
-{% block header_extra %}<div style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="font-size:.85rem;opacity:.7;color:#fff;">{{ kid.icon }} {{ kid.name }}</span><span style="font-size:1rem;font-weight:800;background:oklch(97% 0.04 80);border:2px solid oklch(72% 0.15 80);border-radius:12px;padding:5px 14px;color:oklch(30% 0.12 60);white-space:nowrap;">&#11088; <span id="spendable">{{ spendable }}</span> pts</span></div>{% endblock %}
 {% block content %}
 <style>
   :root {
@@ -18,6 +17,23 @@
 
   /* ---- wrap ---- */
   .pet-wrap { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
+
+  /* ---- points summary bar ---- */
+  .points-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 4px 10px;
+    border-bottom: 1.5px solid oklch(90% 0.03 280);
+    margin-bottom: 6px;
+  }
+  .points-bar-kid {
+    font-size: .97rem; font-weight: 700; color: oklch(28% 0.06 280);
+  }
+  .points-bar-pts {
+    font-size: 1rem; font-weight: 800;
+    background: oklch(97% 0.04 80); border: 2px solid oklch(72% 0.15 80);
+    border-radius: 12px; padding: 5px 16px; color: oklch(30% 0.12 60);
+    white-space: nowrap;
+  }
 
   /* ---- buy buttons: equal size grid ---- */
   .buy-section { padding: 18px 0 6px; }
@@ -145,6 +161,10 @@
 
 
 <div class="pet-wrap">
+  <div class="points-bar">
+    <span class="points-bar-kid">{{ kid.icon }} {{ kid.name }}</span>
+    <span class="points-bar-pts">&#11088; <span id="spendable">{{ spendable }}</span> pts</span>
+  </div>
   <div class="buy-section">
     <div class="buy-row">
       <div class="buy-col">
@@ -432,7 +452,16 @@ function updateBuyButtons(pts) {
 }
 
 function buyEgg(tier, btn) {
-  if (btn.disabled) return;
+  if (btn.disabled) {
+    var cost  = (tier === 'hd' ? HD_COST : EGG_COST);
+    var cur   = parseInt(spendableEl ? spendableEl.textContent : '0', 10);
+    if (cur < cost) {
+      var need  = cost - cur;
+      var label = tier === 'hd' ? 'a Legendary egg' : 'a Basic egg';
+      showToast('You need ' + need + ' more point' + (need === 1 ? '' : 's') + ' for ' + label + '! Keep spelling! ✊', true);
+    }
+    return;
+  }
   btn.disabled = true;
   var nonce = tier + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
   post('/api/pet/buy/', {nonce: nonce, tier: tier})
@@ -446,7 +475,11 @@ function buyEgg(tier, btn) {
       } else if (d.ok && d.duplicate) {
         showToast('You already have that egg!');
       } else if (d.error === 'not_enough_points') {
-        showToast('Need ' + (tier === 'hd' ? HD_COST : EGG_COST) + ' pts - keep spelling!', true);
+        var cost  = (tier === 'hd' ? HD_COST : EGG_COST);
+        var cur   = parseInt(spendableEl ? spendableEl.textContent : '0', 10);
+        var need  = cost - cur;
+        var label = tier === 'hd' ? 'a Legendary egg' : 'a Basic egg';
+        showToast('You need ' + need + ' more point' + (need === 1 ? '' : 's') + ' for ' + label + '! Keep spelling! ✊', true);
         updateBuyButtons(parseInt(spendableEl ? spendableEl.textContent : '0', 10));
       } else {
         showToast(d.error || 'Could not buy egg', true);
