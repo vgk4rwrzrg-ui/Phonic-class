@@ -52,7 +52,10 @@ class Class(models.Model):
     # Pet egg shop settings
     pets_enabled = models.BooleanField(default=True)
     egg_cost = models.PositiveIntegerField(
-        default=50, help_text="Points needed to buy one pet egg."
+        default=250, help_text="Points needed to buy one pet egg."
+    )
+    hd_cost = models.PositiveIntegerField(
+        default=1000, help_text="Points needed to buy one HD pet egg (larger image + human sayings)."
     )
 
     objects = ClassManager()
@@ -333,6 +336,22 @@ class Pet(models.Model):
     )
     hatch_task_id = models.CharField(max_length=100, blank=True, default='')
     hatch_updated = models.DateTimeField(auto_now=True, null=True)
+
+    tier = models.CharField(
+        max_length=10,
+        default='basic',
+        choices=[('basic', 'Basic'), ('hd', 'HD')],
+    )
+    human_sayings_json = models.TextField(default='[]')  # list of 5 human phrases for HD pets
+
+    @property
+    def human_sayings(self):
+        """Decoded list of human-friendly sayings for HD pets."""
+        import json
+        try:
+            return json.loads(self.human_sayings_json)
+        except (ValueError, TypeError):
+            return []
 
     class Meta:
         ordering = ["-created"]

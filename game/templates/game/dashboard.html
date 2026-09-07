@@ -242,11 +242,18 @@
       Pet egg shop on
     </label>
     <label style="display:block;margin:8px 0;">
-      Egg cost
+      Basic egg cost
       <input type="number" id="eggCost" min="5" max="5000"
              value="{{ classroom.egg_cost }}" style="width:90px;"
-             aria-label="Pet egg cost in points">
+             aria-label="Basic pet egg cost in points">
       points
+    </label>
+    <label style="display:block;margin:8px 0;">
+      HD egg cost
+      <input type="number" id="hdCost" min="5" max="5000"
+             value="{{ classroom.hd_cost }}" style="width:90px;"
+             aria-label="HD pet egg cost in points">
+      points (larger image + 5 sayings)
     </label>
     <button type="submit">Save bonus settings</button>
   </form>
@@ -772,7 +779,8 @@ if (bonusForm) {
         balloon_frequency: document.getElementById('balloonFrequency').value,
         boss_enabled: document.getElementById('bossEnabled').checked,
         pets_enabled: document.getElementById('petsEnabled').checked,
-        egg_cost: document.getElementById('eggCost').value
+        egg_cost: document.getElementById('eggCost').value,
+        hd_cost: document.getElementById('hdCost').value
       })
     })
     .then(function (r) { return r.json(); })

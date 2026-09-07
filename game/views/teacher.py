@@ -143,6 +143,12 @@ def api_teacher_settings(request, cr):
         return teacher_fail(err)
     if field:
         changed.append(field)
+    field, err = _apply_clamped_setting(cr, data, "hd_cost", 5, 5000,
+                                        "Invalid HD egg cost")
+    if err:
+        return teacher_fail(err)
+    if field:
+        changed.append(field)
 
     if changed:
         cr.save(update_fields=changed)
