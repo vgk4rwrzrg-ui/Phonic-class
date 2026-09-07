@@ -364,3 +364,67 @@ class FindVoiceTests(SimpleTestCase):
         kwargs = fake_mod.VoiceSelectionParams.call_args.kwargs
         self.assertEqual(kwargs["name"], "en-GB-Wavenet-A")
         self.assertEqual(kwargs["language_code"], "en-GB")
+
+
+class BundledSoundTests(TestCase):
+    def setUp(self):
+        teacher = User.objects.create_user("t-bundled")
+        self.classroom = Class.objects.create(name="1A", code="1a", teacher=teacher)
+
+    def test_install_replaces_shared_but_not_custom(self):
+        from game.management.commands.seedsounds import install_bundled_sound
+        old = GraphemeSound(classroom=None, grapheme="S", source="google")
+        old.audio.save("shared_s.mp3", ContentFile(b"google"), save=True)
+        mine = GraphemeSound(classroom=self.classroom, grapheme="S", source="custom")
+        mine.audio.save("mine.mp3", ContentFile(b"teacher"), save=True)
+
+        install_bundled_sound("S", b"human-phoneme")
+
+        shared = GraphemeSound.objects.get(classroom__isnull=True, grapheme="S")
+        self.assertEqual(shared.source, "bundled")
+        self.assertEqual(shared.audio.read(), b"human-phoneme")
+        # teacher recording untouched and still wins for their class
+        self.assertEqual(GraphemeSound.objects.playable(self.classroom, "S").source,
+                         "custom")
+        # other classes now hear the bundled human recording
+        other = Class.objects.create(name="1B", code="1b",
+                                     teacher=User.objects.create_user("t2-bundled"))
+        self.assertEqual(GraphemeSound.objects.playable(other, "S").source,
+                         "bundled")
+
+    def test_makevoices_wont_clobber_bundled(self):
+        from game.management.commands.seedsounds import install_bundled_sound
+        from io import StringIO
+        from django.core.management import call_command
+        install_bundled_sound("S", b"human")
+        with mock.patch("game.tts.synthesize", return_value=b"tts") as synth:
+            out = StringIO()
+            call_command("makevoices", letters="S", stdout=out)
+        self.assertIn("keeping bundled S", out.getvalue())
+        shared = GraphemeSound.objects.get(classroom__isnull=True, grapheme="S")
+        self.assertEqual(shared.source, "bundled")
+
+
+class FetchSeedSoundsTests(SimpleTestCase):
+    def test_every_grapheme_has_a_licensed_source(self):
+        from game.management.commands import fetchseedsounds as f
+        for g, fname in f.GRAPHEME_FILES.items():
+            self.assertIn(fname, f.FILE_SOURCES, g)
+            self.assertIn(f.FILE_SOURCES[fname]["license"].split()[0], ("CC", "Public"))
+            self.assertTrue(
+                f.FILE_SOURCES[fname]["url"].startswith("https://upload.wikimedia.org/"))
+        self.assertEqual(f.COMBOS, {"X": ["K", "S"], "QU": ["K", "W"]})
+
+    def test_processing_uses_bundled_ffmpeg_with_trim_and_loudnorm(self):
+        from game.management.commands import fetchseedsounds as f
+        with mock.patch.object(f, "_run_ffmpeg") as run:
+            f.process_ogg_to_mp3("in.ogg", "out.mp3")
+        args = run.call_args[0][0]
+        self.assertIn("silenceremove", " ".join(args))
+        self.assertIn("loudnorm", " ".join(args))
+
+    def test_concat_builds_two_input_filter(self):
+        from game.management.commands import fetchseedsounds as f
+        with mock.patch.object(f, "_run_ffmpeg") as run:
+            f.concat_mp3s(["K.mp3", "S.mp3"], "X.mp3")
+        self.assertIn("concat=n=2:v=0:a=1", " ".join(run.call_args[0][0]))

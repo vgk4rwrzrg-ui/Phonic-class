@@ -21,6 +21,9 @@ class Command(BaseCommand):
             "--letters",
             help="Comma-separated graphemes to force-regenerate (e.g. S,F,SH).",
         )
+        parser.add_argument("--overwrite-bundled", action="store_true",
+                            dest="overwrite_bundled",
+                            help="Replace bundled human recordings with Google TTS.")
 
     def _generate_shared_graphemes(self, graphemes, opts):
         """Google letter sounds are shared by every classroom (classroom=None)."""
@@ -30,6 +33,11 @@ class Command(BaseCommand):
                 classroom__isnull=True, grapheme=g).first()
             if existing and not opts["force"] and g not in forced:
                 self.stdout.write(f"already have  {g}")
+                continue
+            if existing and existing.source == "bundled" and not opts.get("overwrite_bundled"):
+                self.stdout.write(
+                    f"keeping bundled {g} (human recording beats TTS; "
+                    "--overwrite-bundled to replace)")
                 continue
             try:
                 audio = tts.synthesize(g)
