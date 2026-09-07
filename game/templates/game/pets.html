@@ -73,6 +73,7 @@
     pointer-events: auto;
   }
   .buy-btn:disabled { opacity: .42; }
+  .buy-btn.btn-dim { opacity: .42; }
   .buy-btn-basic { background: var(--accent); color: #fff; }
   .buy-btn-hd {
     background: linear-gradient(135deg, oklch(55% 0.18 280), oklch(66% 0.16 50));
@@ -194,8 +195,10 @@
     <div class="buy-row">
       <div class="buy-col">
         <div class="buy-btn-tap" id="basicTap" role="button" tabindex="0"
+             onclick="handleBuyTap('basic')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleBuyTap('basic');}"
              aria-label="Buy Basic Egg for {{ egg_cost }} points">
-          <button class="buy-btn buy-btn-basic" id="buyBasicBtn" tabindex="-1">
+          <button class="buy-btn buy-btn-basic" id="buyBasicBtn" tabindex="-1" type="button">
             &#129370; Basic Egg<br><small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
           </button>
         </div>
@@ -204,8 +207,10 @@
       </div>
       <div class="buy-col">
         <div class="buy-btn-tap" id="hdTap" role="button" tabindex="0"
+             onclick="handleBuyTap('hd')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleBuyTap('hd');}"
              aria-label="Buy Legendary Egg for {{ hd_cost }} points">
-          <button class="buy-btn buy-btn-hd" id="buyHdBtn" tabindex="-1">
+          <button class="buy-btn buy-btn-hd" id="buyHdBtn" tabindex="-1" type="button">
             &#127775; Legendary Egg<br>
             <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
               <span class="hd-badge">LEGENDARY</span></small>
@@ -314,43 +319,30 @@ function updatePointsUI(pts) {
     hdNudge.innerHTML = 'You unlocked Legendary! <span style="color:oklch(62% 0.18 60)">\u2728</span>';
   }
 
-  /* enable/disable buttons */
+  /* visual affordance — never set native disabled so clicks always fire */
   var basicBtn = document.getElementById('buyBasicBtn');
   var hdBtn    = document.getElementById('buyHdBtn');
   var basicTap = document.getElementById('basicTap');
   var hdTap    = document.getElementById('hdTap');
 
-  basicBtn.disabled = (pts < EGG_COST);
-  hdBtn.disabled    = (pts < HD_COST);
-  basicTap.classList.toggle('disabled', pts < EGG_COST);
-  hdTap.classList.toggle('disabled', pts < HD_COST);
+  if (basicBtn) basicBtn.classList.toggle('btn-dim', pts < EGG_COST);
+  if (hdBtn)    hdBtn.classList.toggle('btn-dim',    pts < HD_COST);
+  if (basicTap) basicTap.classList.toggle('disabled', pts < EGG_COST);
+  if (hdTap)    hdTap.classList.toggle('disabled',    pts < HD_COST);
 }
 
-/* ---- tap wrappers — fire click or show "need X more pts" toast ---- */
+/* ---- tap handler — called by onclick on the wrapper divs ---- */
 function handleBuyTap(tier) {
-  var pts      = getSpendable();
-  var cost     = (tier === 'hd') ? HD_COST : EGG_COST;
-  var name     = (tier === 'hd') ? 'Legendary Egg' : 'Basic Egg';
-  var needed   = cost - pts;
+  var pts    = getSpendable();
+  var cost   = (tier === 'hd') ? HD_COST : EGG_COST;
+  var name   = (tier === 'hd') ? 'Legendary Egg' : 'Basic Egg';
+  var needed = cost - pts;
   if (needed > 0) {
     showToast('You need ' + needed + ' more point' + (needed === 1 ? '' : 's') + ' for the ' + name + '!', 'info');
     return;
   }
   buyEgg(tier);
 }
-
-function setupTap(tapId, btnId, tier) {
-  var wrapper = document.getElementById(tapId);
-  var btn     = document.getElementById(btnId);
-  function onTap(e) { e.stopPropagation(); handleBuyTap(tier); }
-  if (wrapper) wrapper.addEventListener('click', onTap);
-  if (btn)     btn.addEventListener('click', onTap);
-  if (wrapper) wrapper.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBuyTap(tier); }
-  });
-}
-setupTap('basicTap', 'buyBasicBtn', 'basic');
-setupTap('hdTap',    'buyHdBtn',    'hd');
 
 /* ---- buy egg ---- */
 function buyEgg(tier) {
