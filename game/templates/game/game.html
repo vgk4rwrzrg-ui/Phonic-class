@@ -128,10 +128,36 @@
   .bz-victory .vtitle { font-size:1.9rem; font-weight:900; color:#7bff9e; margin:10px 0; }
   .bz-victory .vletters { font-size:2rem; letter-spacing:.2em; color:#ffe45c; font-weight:900;
                           word-break:break-all; margin:8px 0; }
+  /* ---- Word magic (boss fight) ---- */
+  .bz-magic { min-height:70px; display:flex; flex-direction:column; align-items:center;
+              justify-content:center; gap:4px; }
+  #magicOrb { font-size:2.6rem; line-height:1; display:inline-block; transform:scale(.4); opacity:.55;
+              transition:transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s;
+              filter:drop-shadow(0 0 6px #b48cff); }
+  #magicOrb.bump { animation:orbbump .3s; }
+  @keyframes orbbump { 40% { filter:drop-shadow(0 0 18px #e0c3ff) brightness(1.4); } }
+  #magicOrb.charged { animation:orbcharged 1s ease-in-out infinite; }
+  @keyframes orbcharged { 0%,100% { filter:drop-shadow(0 0 10px #b48cff); }
+                          50% { filter:drop-shadow(0 0 26px #ffe45c) brightness(1.55); } }
+  #magicWord { min-height:1.4em; font-weight:900; color:#e0c3ff; font-size:1.15rem;
+               letter-spacing:.08em; opacity:0; transition:opacity .3s;
+               text-shadow:0 0 12px #b48cff; }
+  #magicWord.show { opacity:1; }
+  .magic-sparkle { position:fixed; z-index:70; font-size:1.3rem; pointer-events:none;
+                   transition:transform .45s ease-in, opacity .45s; }
+  .magic-projectile { position:fixed; z-index:70; pointer-events:none;
+                      transition:transform .45s cubic-bezier(.5,0,1,.6);
+                      filter:drop-shadow(0 0 14px #ffe45c); }
+  .magic-burst { position:fixed; z-index:70; pointer-events:none;
+                 animation:burstpop .6s ease-out forwards; }
+  @keyframes burstpop { 0% { transform:scale(.4); opacity:1; }
+                        100% { transform:scale(1.6) translateY(-10px); opacity:0; } }
+
   #bossResume { display:none; }
 
   @media (prefers-reduced-motion: reduce) {
-    .bz-art.bob, .toast, .tile.shake, .balloon.wiggle, .bz-art.hit { animation:none !important; }
+    .bz-art.bob, .toast, .tile.shake, .balloon.wiggle, .bz-art.hit,
+    #magicOrb.bump, #magicOrb.charged, .magic-burst { animation:none !important; }
     * { transition-duration:.01s !important; }
   }
   @media (max-width:480px) {
@@ -199,6 +225,10 @@
       <div class="bz-recovered" id="bossRecovered" aria-live="polite"></div>
       <button class="bigbtn" id="bossHear" type="button">&#128266; HEAR THE WORD</button>
       <div class="bz-boxes" id="bossBoxes"></div>
+      <div class="bz-magic" aria-hidden="true">
+        <div id="magicOrb">&#128302;</div>
+        <div id="magicWord"></div>
+      </div>
       <div class="bz-tiles" id="bossTiles"></div>
       <div class="bz-msg" id="bossMsg" aria-live="polite"></div>
     </div>
@@ -876,6 +906,117 @@ function updateBossRecovered() {
     : 'No letters recovered yet \u2014 you can do it!';
 }
 
+/* ---- Word magic ----------------------------------------------------
+   Each correctly placed tile feeds the magic orb and it grows; the more
+   tiles in the word, the more powerful the magic.  When the word is
+   complete it is translated into a rune "magic word" and hurled at
+   Baron Blot.  Purely visual: damage stays server-decided (1 HP/word). */
+var RUNES = { A:'\u16A8', B:'\u16D2', C:'\u16B2', D:'\u16DE', E:'\u16D6',
+  F:'\u16A0', G:'\u16B7', H:'\u16BA', I:'\u16C1', J:'\u16C3', K:'\u16E3',
+  L:'\u16DA', M:'\u16D7', N:'\u16BE', O:'\u16DF', P:'\u16C8', Q:'\u16E9',
+  R:'\u16B1', S:'\u16CB', T:'\u16CF', U:'\u16A2', V:'\u16A1', W:'\u16B9',
+  X:'\u16EA', Y:'\u16A4', Z:'\u16C9' };
+
+function magicTranslate(word) {
+  var out = '';
+  for (var i = 0; i < word.length; i++) out += RUNES[word[i]] || '\u2726';
+  return out;
+}
+
+var magicCharge = 0, magicMax = 1;
+
+function resetMagic(unitCount) {
+  magicCharge = 0;
+  magicMax = unitCount || 1;
+  var orb = document.getElementById('magicOrb');
+  orb.classList.remove('charged', 'bump');
+  orb.style.transform = 'scale(.4)';
+  orb.style.opacity = '.55';
+  var mw = document.getElementById('magicWord');
+  mw.textContent = '';
+  mw.classList.remove('show');
+}
+
+function growMagic(fromBox) {
+  magicCharge = Math.min(magicCharge + 1, magicMax);
+  var orb = document.getElementById('magicOrb');
+  sparkleTo(fromBox, orb);
+  setTimeout(function () {
+    var frac = magicCharge / magicMax;
+    orb.style.transform = 'scale(' + (0.4 + 1.1 * frac) + ')'; // more tiles = bigger magic
+    orb.style.opacity = String(0.55 + 0.45 * frac);
+    orb.classList.remove('bump'); void orb.offsetWidth; orb.classList.add('bump');
+    if (magicCharge >= magicMax) orb.classList.add('charged');
+  }, 240);
+}
+
+function sparkleTo(fromEl, toEl) {
+  if (!fromEl || !toEl) return;
+  var a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  var sp = document.createElement('span');
+  sp.className = 'magic-sparkle';
+  sp.textContent = '\u2728';
+  sp.style.left = (a.left + a.width / 2 - 10) + 'px';
+  sp.style.top = (a.top + a.height / 2 - 10) + 'px';
+  document.body.appendChild(sp);
+  void sp.offsetWidth;
+  sp.style.transform = 'translate(' + (b.left + b.width / 2 - a.left - a.width / 2) + 'px,' +
+      (b.top + b.height / 2 - a.top - a.height / 2) + 'px) scale(.5)';
+  sp.style.opacity = '0';
+  setTimeout(function () { sp.remove(); }, 500);
+}
+
+function showMagicWord(word) {
+  var el = document.getElementById('magicWord');
+  el.textContent = word + ' \u2192 ' + magicTranslate(word) + ' !';
+  el.classList.add('show');
+}
+
+function hideMagicWord() {
+  document.getElementById('magicWord').classList.remove('show');
+  document.getElementById('magicOrb').classList.remove('charged');
+}
+
+function fireMagicAt(power, done) {
+  var orb = document.getElementById('magicOrb');
+  var art = document.getElementById('bossArt');
+  if (!orb || !art) { done(); return; }
+  var a = orb.getBoundingClientRect(), b = art.getBoundingClientRect();
+  var proj = document.createElement('span');
+  proj.className = 'magic-projectile';
+  proj.textContent = '\uD83D\uDD2E';
+  proj.style.fontSize = (1.2 + 0.25 * Math.min(power, 6)) + 'rem'; // power scales the blast
+  proj.style.left = (a.left + a.width / 2 - 14) + 'px';
+  proj.style.top = (a.top + a.height / 2 - 14) + 'px';
+  document.body.appendChild(proj);
+  orb.style.transform = 'scale(.4)';
+  orb.style.opacity = '.55';
+  void proj.offsetWidth;
+  proj.style.transform = 'translate(' + (b.left + b.width / 2 - a.left - a.width / 2) + 'px,' +
+      (b.top + b.height / 2 - a.top - a.height / 2) + 'px) scale(1.15)';
+  setTimeout(function () {
+    proj.remove();
+    magicBurst(b, power);
+    hideMagicWord();
+    setTimeout(done, 200);
+  }, 480);
+}
+
+function magicBurst(rect, power) {
+  var glyphs = ['\uD83D\uDCA5', '\u2B50', '\u2728'];
+  var n = Math.min(4 + power, 10);
+  for (var i = 0; i < n; i++) {
+    var sp = document.createElement('span');
+    sp.className = 'magic-burst';
+    sp.textContent = glyphs[i % glyphs.length];
+    sp.style.fontSize = (1 + Math.random() * 0.9) + 'rem';
+    sp.style.left = (rect.left + rect.width / 2 - 12 + (Math.random() * 90 - 45)) + 'px';
+    sp.style.top = (rect.top + rect.height / 2 - 12 + (Math.random() * 70 - 35)) + 'px';
+    document.body.appendChild(sp);
+    setTimeout(function (el) { return function () { el.remove(); }; }(sp), 650);
+  }
+}
+
 function nextBossWord() {
   if (!bossState.queue.length) { return; }
   bossState.word = bossState.queue[0];
@@ -885,6 +1026,7 @@ function nextBossWord() {
   var boxes = document.getElementById('bossBoxes');
   var tilesEl = document.getElementById('bossTiles');
   boxes.innerHTML = ''; tilesEl.innerHTML = '';
+  resetMagic(units.length);
   units.forEach(function () {
     var b = document.createElement('div');
     b.className = 'bz-box';
@@ -918,6 +1060,7 @@ function bossTileTap(btn, o) {
     playUnit({ letter: o.g, sound: o.sound });
     vibrate(20);
     bossState.boxIdx++;
+    growMagic(box);
     if (bossState.boxIdx >= bossState.units.length) bossWordComplete();
   } else {
     vibrate([30, 40, 30]);
@@ -934,38 +1077,46 @@ function bossWordComplete() {
   if (bossState.busy) return;
   bossState.busy = true;
   var word = bossState.word;
+  var power = bossState.units.length;
+  showMagicWord(word);   // the spelled word becomes a rune magic word
   api('/api/boss/spell/', { fight_id: bossState.fightId, word: word }).then(function (res) {
     bossState.busy = false;
     if (!res) {
+      hideMagicWord();
       showToast('Connection hiccup \u2014 let\u2019s try that word again!', 'error');
       nextBossWord();
       return;
     }
-    if (!res.ok) { showToast(res.error || 'Something went wrong', 'error'); return; }
-    bossState.hp = res.boss_hp;
-    bossState.spelled = res.words_spelled || bossState.spelled;
-    bossState.queue = bossState.queue.filter(function (w) { return w !== word; });
-    var art = document.getElementById('bossArt');
-    art.classList.remove('hit'); void art.offsetWidth; art.classList.add('hit');
-    updateBossHp();
-    updateBossRecovered();
-    // Wait for the cheer to finish before the next word plays, so the
-    // audio never overlaps.
-    var afterCheer = function () {
+    if (!res.ok) { hideMagicWord(); showToast(res.error || 'Something went wrong', 'error'); return; }
+    // Hurl the charged magic at Baron Blot, THEN apply the hit the server
+    // confirmed (the server stays authoritative over HP).
+    fireMagicAt(power, function () {
       if (!bossState) return;                     // fight was closed meanwhile
-      if (res.completed || bossState.hp === 0) {
-        bossVictory();
-      } else if (bossState.queue.length) {
-        nextBossWord();
-      } else {
-      // Teacher added words mid-fight: refresh from server status
-        api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (r2) {
-          if (r2 && r2.ok && r2.eligible) { openBossRefresh(r2); }
-          else { closeBoss(); showToast('The word list changed \u2014 keep spelling!', 'error'); }
-        });
-      }
-    };
-    sayPhrase('Take that, Baron Blot!', afterCheer);
+      bossState.hp = res.boss_hp;
+      bossState.spelled = res.words_spelled || bossState.spelled;
+      bossState.queue = bossState.queue.filter(function (w) { return w !== word; });
+      var art = document.getElementById('bossArt');
+      art.classList.remove('hit'); void art.offsetWidth; art.classList.add('hit');
+      updateBossHp();
+      updateBossRecovered();
+      // Wait for the cheer to finish before the next word plays, so the
+      // audio never overlaps.
+      var afterCheer = function () {
+        if (!bossState) return;                     // fight was closed meanwhile
+        if (res.completed || bossState.hp === 0) {
+          bossVictory();
+        } else if (bossState.queue.length) {
+          nextBossWord();
+        } else {
+        // Teacher added words mid-fight: refresh from server status
+          api('/api/boss/eligible/', { words_spelled: progress.spelled }).then(function (r2) {
+            if (r2 && r2.ok && r2.eligible) { openBossRefresh(r2); }
+            else { closeBoss(); showToast('The word list changed \u2014 keep spelling!', 'error'); }
+          });
+        }
+      };
+      sayPhrase('Take that, Baron Blot!', afterCheer);
+    });
   });
 }
 
