@@ -128,41 +128,198 @@
   .bz-victory .vtitle { font-size:1.9rem; font-weight:900; color:#7bff9e; margin:10px 0; }
   .bz-victory .vletters { font-size:2rem; letter-spacing:.2em; color:#ffe45c; font-weight:900;
                           word-break:break-all; margin:8px 0; }
-  /* ---- Word magic (boss fight): Disneyland-style glow ---- */
-  .bz-box.filled { border-style:solid; border-color:#ffe45c; color:#fff;
-                   background:radial-gradient(circle at 50% 32%, rgba(255,228,92,.30), rgba(255,255,255,.10));
-                   text-shadow:0 0 6px #fff7d0, 0 0 16px #ffd94a, 0 0 28px #ff9d2e;
-                   animation:letterpop .5s cubic-bezier(.34,1.56,.64,1), boxglow 2.4s ease-in-out .5s infinite; }
-  @keyframes letterpop { 0% { transform:scale(.6); } 60% { transform:scale(1.12); } 100% { transform:scale(1); } }
-  @keyframes boxglow { 0%,100% { box-shadow:0 0 10px rgba(255,220,110,.45), inset 0 0 12px rgba(255,228,92,.30); }
-                       50% { box-shadow:0 0 24px rgba(255,238,160,.95), inset 0 0 20px rgba(255,228,92,.55); } }
-  .bz-magic { min-height:96px; display:flex; flex-direction:column; align-items:center;
-              justify-content:center; gap:8px; }
-  #magicOrb { position:relative; width:58px; height:58px; display:inline-block;
-              transform:scale(.4); opacity:.55;
-              transition:transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s; }
-  .orb-core { position:absolute; inset:0; border-radius:50%;
-              background:radial-gradient(circle at 38% 30%, #fff 0%, #efe0ff 16%, #b48cff 45%, #7b3fb5 72%, #40206b 100%);
-              box-shadow:0 0 18px 4px rgba(180,140,255,.85), 0 0 44px 12px rgba(150,100,240,.45),
-                         inset -6px -8px 16px rgba(40,10,80,.55), inset 5px 6px 12px rgba(255,255,255,.65); }
-  .orb-shine { position:absolute; inset:-14px; border-radius:50%; pointer-events:none; mix-blend-mode:screen;
-               background:conic-gradient(from 0deg, transparent 0 40deg, rgba(255,255,255,.35) 60deg, transparent 80deg,
-                          transparent 200deg, rgba(255,255,255,.22) 220deg, transparent 240deg);
-               animation:orbspin 3.6s linear infinite; }
-  @keyframes orbspin { to { transform:rotate(360deg); } }
-  #magicOrb.bump .orb-core { animation:orbbump .35s; }
-  @keyframes orbbump { 40% { box-shadow:0 0 32px 12px rgba(230,205,255,.95), 0 0 76px 24px rgba(180,140,255,.6),
-                                        inset 0 0 20px rgba(255,255,255,.9); } }
-  #magicOrb.charged .orb-core { animation:orbcharged 1.1s ease-in-out infinite;
-              background:radial-gradient(circle at 38% 30%, #fff 0%, #fff3c0 18%, #ffd94a 48%, #e08a1e 75%, #7a4106 100%); }
-  @keyframes orbcharged { 0%,100% { box-shadow:0 0 20px 6px rgba(255,217,74,.75), 0 0 48px 16px rgba(255,170,45,.40); }
-                          50% { box-shadow:0 0 36px 14px rgba(255,242,180,.95), 0 0 86px 30px rgba(255,195,65,.60); } }
-  #magicOrb.charged::before, #magicOrb.charged::after {
-      content:'\2726'; position:absolute; left:46%; top:42%; color:#fff7d0; font-size:.95rem;
-      text-shadow:0 0 8px #ffd94a, 0 0 16px #ff9d2e; animation:orbit 1.6s linear infinite; }
-  #magicOrb.charged::after { animation-delay:.8s; font-size:.7rem; }
-  @keyframes orbit { from { transform:rotate(0deg) translateX(42px) rotate(0deg); }
-                     to { transform:rotate(360deg) translateX(42px) rotate(-360deg); } }
+      /* ---- Word magic (boss fight): Disneyland-style glow ---- */
+   .bz-box.filled { border-style:solid; border-color:#ffe45c; color:#fff;
+                    background:radial-gradient(circle at 50% 32%, rgba(255,228,92,.30), rgba(255,255,255,.10));
+                    text-shadow:0 0 6px #fff7d0, 0 0 16px #ffd94a, 0 0 28px #ff9d2e;
+                    animation:letterpop .5s cubic-bezier(.34,1.56,.64,1), boxglow 2.4s ease-in-out .5s infinite; }
+   @keyframes letterpop { 0% { transform:scale(.6); } 60% { transform:scale(1.12); } 100% { transform:scale(1); } }
+   @keyframes boxglow { 0%,100% { box-shadow:0 0 10px rgba(255,220,110,.45), inset 0 0 12px rgba(255,228,92,.30); }
+                        50% { box-shadow:0 0 24px rgba(255,238,160,.95), inset 0 0 20px rgba(255,228,92,.55); } }
+   .bz-magic { min-height:96px; display:flex; flex-direction:column; align-items:center;
+               justify-content:center; gap:8px; }
+
+   /* Orb container — canvas behind the glass, grows with charge */
+   #magicOrb { position:relative; width:72px; height:72px; display:inline-block;
+               transform:scale(.4); opacity:.55;
+               transition:transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s; }
+   #orbCanvas { position:absolute; left:50%; top:50%;
+                transform:translate(-50%,-50%);
+                width:220px; height:220px;
+                pointer-events:none; z-index:0; border-radius:50%; }
+
+   /* Glass sphere on top of canvas */
+   .orb-core { position:absolute; inset:0; border-radius:50%; z-index:1;
+               background:radial-gradient(circle at 36% 28%,
+                 rgba(255,255,255,.95) 0%, rgba(230,215,255,.82) 12%,
+                 rgba(160,100,255,.70) 40%, rgba(100,40,180,.82) 68%,
+                 rgba(30,12,60,.92) 100%);
+               box-shadow:0 0 22px 6px rgba(180,140,255,.90),
+                          0 0 52px 16px rgba(140,90,240,.50),
+                          inset -5px -7px 14px rgba(40,8,80,.55),
+                          inset 4px 5px 12px rgba(255,255,255,.70);
+               animation:orbpulse0 3.1s ease-in-out infinite; }
+   .orb-core::after { content:''; position:absolute; width:28%; height:20%;
+                      top:14%; left:20%; border-radius:50%;
+                      background:rgba(255,255,255,.82); filter:blur(3px);
+                      transform:rotate(-20deg); z-index:2; pointer-events:none; }
+   @keyframes orbpulse0 {
+     0%,100% { box-shadow:0 0 22px 6px rgba(180,140,255,.90), 0 0 52px 16px rgba(140,90,240,.50),
+                          inset -5px -7px 14px rgba(40,8,80,.55), inset 4px 5px 12px rgba(255,255,255,.70); }
+     50%     { box-shadow:0 0 34px 10px rgba(200,165,255,.98), 0 0 72px 24px rgba(150,100,240,.60),
+                          inset -5px -7px 14px rgba(40,8,80,.55), inset 4px 5px 14px rgba(255,255,255,.78); } }
+
+   /* Rotating light-sweep */
+   .orb-shine { position:absolute; inset:-16px; border-radius:50%;
+                pointer-events:none; mix-blend-mode:screen; z-index:2;
+                background:conic-gradient(from 0deg,
+                  transparent 0 38deg, rgba(255,255,255,.38) 58deg,
+                  transparent 78deg, transparent 198deg,
+                  rgba(255,255,255,.22) 218deg, transparent 238deg);
+                animation:orbspin 3.7s linear infinite; }
+   @keyframes orbspin { to { transform:rotate(360deg); } }
+
+   /* LEVEL 1 — ice-blue, waking up */
+   #magicOrb[data-level="1"] .orb-core {
+     background:radial-gradient(circle at 36% 28%,
+       rgba(255,255,255,.95) 0%, rgba(210,238,255,.84) 12%,
+       rgba(90,185,255,.72) 40%, rgba(30,100,200,.84) 68%,
+       rgba(8,30,70,.92) 100%);
+     animation:orbpulse1 2.3s ease-in-out infinite; }
+   @keyframes orbpulse1 {
+     0%    { box-shadow:0 0 26px 8px rgba(100,195,255,.92), 0 0 62px 18px rgba(70,155,240,.52),
+                        inset -5px -7px 14px rgba(8,35,80,.62), inset 4px 5px 12px rgba(255,255,255,.72); }
+     37%   { box-shadow:0 0 44px 16px rgba(150,220,255,1),  0 0 90px 30px rgba(70,155,240,.68),
+                        inset -5px -7px 14px rgba(8,35,80,.62), inset 4px 5px 16px rgba(255,255,255,.88); }
+     61%   { box-shadow:0 0 30px 9px rgba(100,195,255,.85), 0 0 68px 20px rgba(70,155,240,.50),
+                        inset -5px -7px 14px rgba(8,35,80,.62), inset 4px 5px 13px rgba(255,255,255,.76); }
+     100%  { box-shadow:0 0 26px 8px rgba(100,195,255,.92), 0 0 62px 18px rgba(70,155,240,.52),
+                        inset -5px -7px 14px rgba(8,35,80,.62), inset 4px 5px 12px rgba(255,255,255,.72); } }
+   #magicOrb[data-level="1"] .orb-shine { animation-duration:2.7s; }
+
+   /* LEVEL 2 — cyan-green, wobble starts, visibly alive */
+   #magicOrb[data-level="2"] .orb-core {
+     background:radial-gradient(circle at 36% 28%,
+       rgba(255,255,255,.95) 0%, rgba(200,255,230,.84) 12%,
+       rgba(40,220,140,.72) 40%, rgba(10,140,90,.84) 68%,
+       rgba(2,40,22,.92) 100%);
+     animation:orbpulse2 1.55s ease-in-out infinite, orbwobble2 0.79s ease-in-out infinite; }
+   @keyframes orbpulse2 {
+     0%    { box-shadow:0 0 32px 10px rgba(50,225,165,.92), 0 0 72px 22px rgba(30,200,130,.52),
+                        inset -5px -7px 14px rgba(4,36,20,.65), inset 4px 5px 12px rgba(255,255,255,.76); }
+     29%   { box-shadow:0 0 56px 20px rgba(80,255,195,1),  0 0 108px 40px rgba(40,220,145,.70),
+                        inset -5px -7px 14px rgba(4,36,20,.65), inset 4px 5px 18px rgba(200,255,230,.92); }
+     58%   { box-shadow:0 0 38px 12px rgba(50,225,165,.80), 0 0 80px 25px rgba(30,200,130,.45),
+                        inset -5px -7px 14px rgba(4,36,20,.65), inset 4px 5px 14px rgba(255,255,255,.80); }
+     100%  { box-shadow:0 0 32px 10px rgba(50,225,165,.92), 0 0 72px 22px rgba(30,200,130,.52),
+                        inset -5px -7px 14px rgba(4,36,20,.65), inset 4px 5px 12px rgba(255,255,255,.76); } }
+   @keyframes orbwobble2 {
+     0%   { transform:scale(1)    rotate(0deg)    translateX(0px)  translateY(0px); }
+     13%  { transform:scale(1.09) rotate(3.1deg)  translateX(2px)  translateY(-1px); }
+     31%  { transform:scale(.92)  rotate(-3.7deg) translateX(-3px) translateY(2px); }
+     47%  { transform:scale(1.07) rotate(2.0deg)  translateX(1px)  translateY(-2px); }
+     69%  { transform:scale(.95)  rotate(-2.4deg) translateX(-2px) translateY(1px); }
+     84%  { transform:scale(1.04) rotate(1.5deg)  translateX(2px)  translateY(0px); }
+     100% { transform:scale(1)    rotate(0deg)    translateX(0px)  translateY(0px); } }
+   #magicOrb[data-level="2"] .orb-shine { animation-duration:1.95s; }
+
+   /* LEVEL 3 — amber-gold, clearly erratic, energy building */
+   #magicOrb[data-level="3"] .orb-core {
+     background:radial-gradient(circle at 36% 28%,
+       rgba(255,255,255,.97) 0%, rgba(255,245,180,.88) 12%,
+       rgba(255,195,30,.74) 40%, rgba(190,100,0,.86) 68%,
+       rgba(55,22,0,.94) 100%);
+     animation:orbpulse3 0.97s ease-in-out infinite, orbwobble3 0.43s ease-in-out infinite; }
+   @keyframes orbpulse3 {
+     0%    { box-shadow:0 0 38px 12px rgba(255,215,60,.94), 0 0 88px 30px rgba(220,165,30,.56),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 12px rgba(255,255,200,.82); }
+     17%   { box-shadow:0 0 72px 28px rgba(255,248,130,1),  0 0 148px 55px rgba(255,195,45,.80),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 24px rgba(255,255,235,.99); }
+     38%   { box-shadow:0 0 42px 14px rgba(255,220,70,.88), 0 0 96px 34px rgba(220,165,30,.52),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 15px rgba(255,255,210,.86); }
+     63%   { box-shadow:0 0 80px 32px rgba(255,255,160,.98), 0 0 160px 62px rgba(255,200,50,.84),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 28px rgba(255,255,245,1); }
+     79%   { box-shadow:0 0 35px 10px rgba(255,210,50,.90), 0 0 80px 26px rgba(220,160,25,.50),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 11px rgba(255,255,195,.78); }
+     100%  { box-shadow:0 0 38px 12px rgba(255,215,60,.94), 0 0 88px 30px rgba(220,165,30,.56),
+                        inset -5px -7px 14px rgba(58,24,0,.72), inset 4px 5px 12px rgba(255,255,200,.82); } }
+   @keyframes orbwobble3 {
+     0%   { transform:scale(1)    rotate(0deg)    skewX(0deg)    translateX(0px)  translateY(0px); }
+     8%   { transform:scale(1.14) rotate(5.8deg)  skewX(1.8deg)  translateX(3px)  translateY(-2px); }
+     19%  { transform:scale(.86)  rotate(-6.5deg) skewX(-2.2deg) translateX(-4px) translateY(3px); }
+     33%  { transform:scale(1.18) rotate(4.2deg)  skewX(1.4deg)  translateX(2px)  translateY(-3px); }
+     44%  { transform:scale(.88)  rotate(-5.1deg) skewX(-1.7deg) translateX(-3px) translateY(2px); }
+     57%  { transform:scale(1.13) rotate(3.8deg)  skewX(1.1deg)  translateX(4px)  translateY(-1px); }
+     68%  { transform:scale(.91)  rotate(-4.4deg) skewX(-1.3deg) translateX(-2px) translateY(3px); }
+     79%  { transform:scale(1.10) rotate(2.9deg)  skewX(.8deg)   translateX(2px)  translateY(-2px); }
+     91%  { transform:scale(.93)  rotate(-3.2deg) skewX(-.9deg)  translateX(-3px) translateY(1px); }
+     100% { transform:scale(1)    rotate(0deg)    skewX(0deg)    translateX(0px)  translateY(0px); } }
+   #magicOrb[data-level="3"] .orb-shine { animation-duration:.88s; }
+
+   /* LEVEL 4 / .charged — white-hot, maximum chaos, barely contained */
+   #magicOrb[data-level="4"] .orb-core,
+   #magicOrb.charged         .orb-core {
+     background:radial-gradient(circle at 36% 28%,
+       rgba(255,255,255,1) 0%, rgba(255,248,200,.92) 14%,
+       rgba(255,215,40,.78) 44%, rgba(225,130,15,.88) 72%,
+       rgba(80,32,0,.96) 100%);
+     animation:orbcharged .44s ease-in-out infinite, orbwobble4 .22s ease-in-out infinite; }
+   @keyframes orbcharged {
+     0%    { box-shadow:0 0 55px 22px rgba(255,245,130,.97), 0 0 115px 45px rgba(255,185,40,.70),
+                        inset -5px -7px 14px rgba(80,28,0,.72), inset 4px 5px 20px rgba(255,255,225,.94); }
+     23%   { box-shadow:0 0 95px 38px rgba(255,255,220,1),   0 0 185px 72px rgba(255,210,65,.92),
+                        inset -5px -7px 14px rgba(80,28,0,.72), inset 4px 5px 30px rgba(255,255,255,1); }
+     51%   { box-shadow:0 0 62px 25px rgba(255,248,160,.94), 0 0 130px 50px rgba(255,185,40,.66),
+                        inset -5px -7px 14px rgba(80,28,0,.72), inset 4px 5px 22px rgba(255,255,230,.96); }
+     74%   { box-shadow:0 0 110px 44px rgba(255,255,245,1),  0 0 210px 82px rgba(255,220,70,.96),
+                        inset -5px -7px 14px rgba(80,28,0,.72), inset 4px 5px 36px rgba(255,255,255,1); }
+     100%  { box-shadow:0 0 55px 22px rgba(255,245,130,.97), 0 0 115px 45px rgba(255,185,40,.70),
+                        inset -5px -7px 14px rgba(80,28,0,.72), inset 4px 5px 20px rgba(255,255,225,.94); } }
+   @keyframes orbwobble4 {
+     0%   { transform:scale(1)    rotate(0deg)    skewX(0deg)    skewY(0deg)    translateX(0px)  translateY(0px); }
+     6%   { transform:scale(1.20) rotate(6.8deg)  skewX(2.4deg)  skewY(.9deg)   translateX(4px)  translateY(-3px); }
+     14%  { transform:scale(.80)  rotate(-7.6deg) skewX(-2.9deg) skewY(-1.1deg) translateX(-5px) translateY(4px); }
+     23%  { transform:scale(1.24) rotate(5.9deg)  skewX(2.0deg)  skewY(.7deg)   translateX(3px)  translateY(-4px); }
+     34%  { transform:scale(.82)  rotate(-6.8deg) skewX(-2.3deg) skewY(-.8deg)  translateX(-4px) translateY(3px); }
+     43%  { transform:scale(1.18) rotate(5.1deg)  skewX(1.7deg)  skewY(.6deg)   translateX(5px)  translateY(-2px); }
+     54%  { transform:scale(.84)  rotate(-5.9deg) skewX(-1.9deg) skewY(-.7deg)  translateX(-3px) translateY(4px); }
+     63%  { transform:scale(1.16) rotate(4.4deg)  skewX(1.4deg)  skewY(.5deg)   translateX(2px)  translateY(-3px); }
+     74%  { transform:scale(.87)  rotate(-4.8deg) skewX(-1.6deg) skewY(-.5deg)  translateX(-4px) translateY(2px); }
+     83%  { transform:scale(1.13) rotate(3.7deg)  skewX(1.1deg)  skewY(.4deg)   translateX(3px)  translateY(-2px); }
+     92%  { transform:scale(.90)  rotate(-3.2deg) skewX(-.9deg)  skewY(-.3deg)  translateX(-2px) translateY(2px); }
+     100% { transform:scale(1)    rotate(0deg)    skewX(0deg)    skewY(0deg)    translateX(0px)  translateY(0px); } }
+   #magicOrb[data-level="4"] .orb-shine,
+   #magicOrb.charged         .orb-shine { animation-duration:.38s; }
+
+   /* Bump flash on each tile placed */
+   #magicOrb.bump .orb-core { animation:orbbump .35s !important; }
+   @keyframes orbbump { 40% { box-shadow:0 0 60px 28px rgba(255,255,235,1),
+                                         0 0 120px 48px rgba(255,205,80,.86),
+                                         inset 0 0 30px rgba(255,255,255,.98); } }
+
+   /* Screen energy wash — pulsing background aura at level 3+ */
+   #bossEnergyWash { position:fixed; inset:0; pointer-events:none; z-index:0;
+                     opacity:0; transition:opacity .5s; }
+   #bossEnergyWash.lvl3 { opacity:1;
+     background:radial-gradient(ellipse 70% 60% at 50% 40%,
+       rgba(255,200,30,.07) 0%, rgba(255,160,10,.04) 50%, transparent 80%);
+     animation:washpulse3 1.4s ease-in-out infinite; }
+   #bossEnergyWash.lvl4 { opacity:1;
+     background:radial-gradient(ellipse 80% 70% at 50% 38%,
+       rgba(255,240,80,.14) 0%, rgba(255,180,20,.08) 45%, transparent 75%);
+     animation:washpulse4 .55s ease-in-out infinite; }
+   @keyframes washpulse3 {
+     0%,100% { opacity:.55; } 41% { opacity:1; } 73% { opacity:.35; } }
+   @keyframes washpulse4 {
+     0%,100% { opacity:.6; } 28% { opacity:1; } 62% { opacity:.25; } }
+
+   /* Bump flash on each tile placed */
+   #magicOrb.bump .orb-core { animation:orbbump .35s !important; }
+   @keyframes orbbump { 40% { box-shadow:0 0 60px 28px rgba(255,255,235,1),
+                                         0 0 120px 48px rgba(255,205,80,.86),
+                                         inset 0 0 30px rgba(255,255,255,.98); } }
+
+
   #magicWord { min-height:1.5em; font-weight:900; font-size:1.3rem; letter-spacing:.1em; opacity:0;
                transition:opacity .4s;
                background:linear-gradient(100deg, #ffd94a 20%, #fff8e0 40%, #ffd94a 60%);
@@ -198,13 +355,11 @@
                  animation:burstpop .8s cubic-bezier(.2,.7,.4,1) forwards; }
   @keyframes burstpop { 0% { transform:translate(0,0) scale(.4) rotate(0deg); opacity:1; }
                         100% { transform:translate(var(--dx), var(--dy)) scale(1.5) rotate(160deg); opacity:0; } }
-
-  #bossResume { display:none; }
-
   @media (prefers-reduced-motion: reduce) {
-    .bz-art.bob, .toast, .tile.shake, .balloon.wiggle, .bz-art.hit,
-    #magicOrb.bump .orb-core, #magicOrb.charged .orb-core, #magicOrb.charged::before,
-    #magicOrb.charged::after, .orb-shine, .magic-burst, .magic-flash, .magic-ring,
+    .balloon.wiggle, .bz-art.bob, .bz-art.hit, .toast, .tile.shake,
+    #magicOrb .orb-core, #magicOrb .orb-shine,
+    #magicOrb::before, #magicOrb::after,
+    .magic-burst, .magic-flash, .magic-ring,
     .pixie-dot, #magicWord.show, .bz-box.filled { animation:none !important; }
     * { transition-duration:.01s !important; }
   }
@@ -273,8 +428,9 @@
       <div class="bz-recovered" id="bossRecovered" aria-live="polite"></div>
       <button class="bigbtn" id="bossHear" type="button">&#128266; HEAR THE WORD</button>
       <div class="bz-boxes" id="bossBoxes"></div>
-      <div class="bz-magic" aria-hidden="true">
-        <div id="magicOrb"><div class="orb-core"></div><div class="orb-shine"></div></div>
+      <div id="bossEnergyWash" aria-hidden="true"></div>
+        <div class="bz-magic" aria-hidden="true">
+        <div id="magicOrb"><canvas id="orbCanvas" width="220" height="220" aria-hidden="true"></canvas><div class="orb-core"></div><div class="orb-shine"></div></div>
         <div id="magicWord"></div>
       </div>
       <div class="bz-tiles" id="bossTiles"></div>
@@ -998,16 +1154,343 @@ function magicTranslate(word) {
 
 var magicCharge = 0, magicMax = 1;
 
+/* ---- Orb canvas particle system ------------------------------------ */
+(function () {
+  var _canvas = null, _ctx = null, _raf = null;
+  var _particles = [];
+  var _arcs = [];
+  var _rings = [];
+  var _level = 0;
+  var _frac  = 0;
+  var _t = 0;
+
+  /* Pseudo-noise: sum of sines at irrational frequency ratios */
+  function _noise(t, freqs) {
+    var v = 0;
+    for (var i = 0; i < freqs.length; i++) v += Math.sin(t * freqs[i] * Math.PI * 2);
+    return v / freqs.length;
+  }
+
+  var NOISE_FREQS = [
+    [0.31],
+    [0.41, 0.73],
+    [0.53, 0.97, 1.41],
+    [0.61, 1.13, 1.97, 3.14],
+    [0.71, 1.37, 2.41, 4.33, 7.11],
+  ];
+
+  var PAL = [
+    ['rgba(180,140,255,', 'rgba(140,90,240,',  '#c8aaff', '#e8d8ff', '#c8aaff'],
+    ['rgba(100,195,255,', 'rgba(70,155,240,',  '#7ad4ff', '#c0eaff', '#a0e8ff'],
+    ['rgba(50,225,165,',  'rgba(30,200,130,',  '#40ffb8', '#a0ffd8', '#60ffc8'],
+    ['rgba(255,215,60,',  'rgba(220,165,30,',  '#ffe040', '#fff4a0', '#ffee88'],
+    ['rgba(255,245,130,', 'rgba(255,210,65,',  '#ffffff', '#fff3a0', '#fffaaa'],
+  ];
+
+  function _ensure() {
+    _canvas = document.getElementById('orbCanvas');
+    if (!_canvas) return false;
+    _ctx = _canvas.getContext('2d');
+    return true;
+  }
+
+  function _spawnParticle() {
+    var pal  = PAL[Math.min(_level, 4)];
+    var cx = 110, cy = 110;
+    var orbR = 36 * (0.4 + 1.1 * _frac);
+    var spawnAngle = Math.random() * Math.PI * 2;
+    var spawnR = orbR * (0.7 + Math.random() * 0.5);
+    var speed  = 0.25 + _level * 0.28 + Math.random() * 0.6;
+    var life   = 0.4 + Math.random() * (Math.max(0.2, 0.9 - _level * 0.15));
+    var size   = 1.0 + Math.random() * (1.8 + _level * 0.65);
+    var drift  = (Math.random() - 0.5) * (0.5 + _level * 0.65);
+    var inward = _level >= 4 && Math.random() < 0.3;
+    var baseSpeed = inward ? -speed * 0.6 : speed;
+    _particles.push({
+      x: cx + Math.cos(spawnAngle) * spawnR,
+      y: cy + Math.sin(spawnAngle) * spawnR,
+      vx: Math.cos(spawnAngle) * baseSpeed + Math.cos(spawnAngle + Math.PI/2) * drift,
+      vy: Math.sin(spawnAngle) * baseSpeed + Math.sin(spawnAngle + Math.PI/2) * drift,
+      life: life, maxLife: life,
+      size: size,
+      color: Math.random() < 0.55 ? pal[2] : pal[3],
+      inward: inward, inwardFlipped: false,
+      orbit: _level >= 2 && Math.random() < (0.2 + _level * 0.08),
+      angle: spawnAngle, orbR: spawnR,
+      angSpeed: (0.028 + _level * 0.014) * (Math.random() < 0.5 ? 1 : -1),
+      wobblePhase: Math.random() * Math.PI * 2,
+      wobbleAmp: _level >= 3 ? 0.08 + Math.random() * 0.10 : 0,
+    });
+  }
+
+  function _spawnRing() {
+    var pal = PAL[Math.min(_level, 4)];
+    var orbR = 36 * (0.4 + 1.1 * _frac);
+    _rings.push({
+      r: orbR * 1.1,
+      maxR: orbR * (2.0 + Math.random() * 1.2),
+      life: 0.4 + Math.random() * 0.25,
+      maxLife: 0.65,
+      color: pal[4],
+    });
+  }
+
+  function _spawnArc() {
+    var pal = PAL[Math.min(_level, 4)];
+    var cx = 110, cy = 110;
+    var orbR = 36 * (0.4 + 1.1 * _frac);
+    var a1 = Math.random() * Math.PI * 2;
+    var spread = Math.PI * (0.2 + Math.random() * 0.7);
+    var a2 = a1 + spread * (Math.random() < 0.5 ? 1 : -1);
+    var reach = orbR * (1.4 + Math.random() * (_level >= 4 ? 2.2 : 1.2));
+    _arcs.push({
+      x1: cx + Math.cos(a1) * (orbR + 1),
+      y1: cy + Math.sin(a1) * (orbR + 1),
+      x2: cx + Math.cos(a2) * reach,
+      y2: cy + Math.sin(a2) * reach,
+      life: 0.05 + Math.random() * (_level >= 4 ? 0.22 : 0.12),
+      maxLife: 0.27,
+      color: pal[4],
+      segments: 4 + (_level >= 4 ? 3 : 0),
+      width: _level >= 4 ? 2.0 : 1.3,
+    });
+  }
+
+  function _drawArc(ctx, arc) {
+    var progress = 1 - arc.life / arc.maxLife;
+    var alpha = progress < 0.4 ? progress / 0.4 : 1 - (progress - 0.4) / 0.6;
+    ctx.save();
+    ctx.strokeStyle = arc.color;
+    ctx.globalAlpha = alpha * 0.92;
+    ctx.lineWidth   = arc.width;
+    ctx.shadowColor = arc.color;
+    ctx.shadowBlur  = 12;
+    ctx.beginPath();
+    var dx = arc.x2 - arc.x1, dy = arc.y2 - arc.y1;
+    var len = Math.hypot(dx, dy) || 1;
+    var nx = -dy / len, ny = dx / len;
+    var pts = [[arc.x1, arc.y1]];
+    for (var s = 1; s <= arc.segments; s++) {
+      var f = s / (arc.segments + 1);
+      var jitter = (Math.random() - 0.5) * (14 + _level * 5);
+      pts.push([arc.x1 + dx * f + nx * jitter, arc.y1 + dy * f + ny * jitter]);
+    }
+    pts.push([arc.x2, arc.y2]);
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var p = 1; p < pts.length; p++) ctx.lineTo(pts[p][0], pts[p][1]);
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = arc.width * 0.4;
+    ctx.shadowBlur = 4;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* JS-driven random glow flicker */
+  var _glowEl = null;
+  var _glowTimer = 0;
+  var _glowInterval = [0.18, 0.14, 0.09, 0.05, 0.025];
+
+  function _flicker(dt) {
+    if (_level < 2) return;
+    _glowTimer -= dt;
+    if (_glowTimer > 0) return;
+    _glowTimer = _glowInterval[Math.min(_level, 4)] * (0.5 + Math.random());
+    if (!_glowEl) _glowEl = document.querySelector('#magicOrb .orb-core');
+    if (!_glowEl) return;
+    var base   = [26, 32, 38, 55, 75][_level] || 26;
+    var spread = [8, 10, 12, 22, 38][_level] || 8;
+    var outer  = [62, 72, 88, 115, 160][_level] || 62;
+    var outerSp= [18, 22, 30, 45, 70][_level] || 18;
+    var jA = (Math.random() - 0.5) * (_level * 0.18);
+    var jB = (Math.random() - 0.5) * (_level * 0.20);
+    var rA = base  + (Math.random() - 0.5) * (_level * 8);
+    var rB = outer + (Math.random() - 0.5) * (_level * 12);
+    var flare = _level >= 4 && Math.random() < 0.12;
+    if (flare) { rA *= 1.6; rB *= 1.5; jA = 0.98; jB = 0.92; }
+    var pA = PAL[Math.min(_level,4)][0];
+    var pB = PAL[Math.min(_level,4)][1];
+    _glowEl.style.boxShadow =
+      rA + 'px ' + spread + 'px ' + pA + Math.min(1, 0.90 + jA) + '),' +
+      rB + 'px ' + outerSp + 'px ' + pB + Math.min(1, 0.65 + jB) + '),' +
+      'inset -5px -7px 14px rgba(80,28,0,.72),' +
+      'inset 4px 5px ' + (18 + (flare ? 14 : 0)) + 'px rgba(255,255,225,.94)';
+  }
+
+  /* Screen energy wash */
+  var _washEl = null;
+  function _updateWash() {
+    if (!_washEl) _washEl = document.getElementById('bossEnergyWash');
+    if (!_washEl) return;
+    _washEl.className = _level >= 4 ? 'lvl4' : _level >= 3 ? 'lvl3' : '';
+  }
+
+  function _tick(dt) {
+    if (!_ctx || !_canvas) return;
+    _t += dt;
+    var W = _canvas.width, H = _canvas.height;
+    _ctx.clearRect(0, 0, W, H);
+
+    var spawnChance = [0.12, 0.35, 0.58, 0.80, 0.96][_level] || 0.12;
+    var spawnCount  = [1,    2,    3,    6,    12  ][_level] || 1;
+    if (Math.random() < spawnChance) {
+      for (var s = 0; s < spawnCount; s++) _spawnParticle();
+    }
+
+    if (_level >= 3 && Math.random() < (_level === 3 ? 0.022 : 0.06)) _spawnRing();
+
+    var arcChance = _level === 3 ? 0.08 : _level >= 4 ? 0.28 : 0;
+    if (arcChance > 0 && Math.random() < arcChance) _spawnArc();
+    if (_level >= 4 && Math.random() < 0.14) _spawnArc();
+
+    _flicker(dt);
+    _updateWash();
+
+    /* central bloom with pseudo-noise flicker */
+    var orbR = 36 * (0.4 + 1.1 * _frac);
+    var pal = PAL[Math.min(_level, 4)];
+    if (_level > 0) {
+      var freqs = NOISE_FREQS[Math.min(_level, 4)];
+      var n = _noise(_t, freqs);
+      var bloomAmp = [0, 0.14, 0.24, 0.38, 0.56][_level] || 0;
+      var bloom = orbR * (1 + bloomAmp * (0.5 + 0.5 * n));
+      var grad = _ctx.createRadialGradient(110, 110, orbR * 0.5, 110, 110, bloom * 2.6);
+      grad.addColorStop(0, pal[0] + '0.30)');
+      grad.addColorStop(0.4, pal[1] + '0.16)');
+      grad.addColorStop(1,   pal[0] + '0)');
+      _ctx.save();
+      _ctx.fillStyle = grad;
+      _ctx.beginPath();
+      _ctx.arc(110, 110, bloom * 2.6, 0, Math.PI * 2);
+      _ctx.fill();
+      _ctx.restore();
+    }
+
+    for (var ri = _rings.length - 1; ri >= 0; ri--) {
+      var ring = _rings[ri];
+      ring.life -= dt;
+      if (ring.life <= 0) { _rings.splice(ri, 1); continue; }
+      var rp = 1 - ring.life / ring.maxLife;
+      ring.r += (ring.maxR - ring.r) * dt * 4.5;
+      var ra = rp < 0.3 ? rp / 0.3 : 1 - (rp - 0.3) / 0.7;
+      _ctx.save();
+      _ctx.strokeStyle = ring.color;
+      _ctx.globalAlpha = ra * 0.60;
+      _ctx.lineWidth = 1.8;
+      _ctx.shadowColor = ring.color;
+      _ctx.shadowBlur = 10;
+      _ctx.beginPath();
+      _ctx.arc(110, 110, ring.r, 0, Math.PI * 2);
+      _ctx.stroke();
+      _ctx.restore();
+    }
+
+    for (var i = _particles.length - 1; i >= 0; i--) {
+      var pp = _particles[i];
+      pp.life -= dt;
+      if (pp.life <= 0) { _particles.splice(i, 1); continue; }
+      var a = pp.life / pp.maxLife;
+      if (pp.orbit) {
+        pp.angle += pp.angSpeed * (1 + (_level >= 4 ? _noise(_t * 3 + pp.wobblePhase, [2.3, 3.7]) * 0.6 : 0));
+        pp.orbR  += dt * (9 + _level * 7);
+        pp.x = 110 + Math.cos(pp.angle) * pp.orbR;
+        pp.y = 110 + Math.sin(pp.angle) * pp.orbR;
+      } else {
+        if (pp.inward && !pp.inwardFlipped && pp.life < pp.maxLife * 0.45) {
+          pp.inwardFlipped = true;
+          pp.vx = -pp.vx * 3.0;
+          pp.vy = -pp.vy * 3.0;
+        }
+        if (_level >= 3) {
+          var wobble = _noise(_t * 7 + pp.wobblePhase, [1.7, 2.9]) * pp.wobbleAmp;
+          pp.vx += Math.cos(pp.angle + Math.PI/2) * wobble;
+          pp.vy += Math.sin(pp.angle + Math.PI/2) * wobble;
+        }
+        if (_level >= 4) {
+          pp.vx += (Math.random() - 0.5) * 0.55;
+          pp.vy += (Math.random() - 0.5) * 0.55;
+        }
+        pp.x += pp.vx;
+        pp.y += pp.vy;
+      }
+      var drawSize = pp.size * (0.4 + a * 0.6);
+      _ctx.save();
+      _ctx.globalAlpha = a * (_level === 0 ? 0.45 : 0.90);
+      _ctx.shadowColor = pp.color;
+      _ctx.shadowBlur  = drawSize * (2.5 + _level * 1.4);
+      _ctx.fillStyle   = pp.color;
+      _ctx.beginPath();
+      _ctx.arc(pp.x, pp.y, drawSize, 0, Math.PI * 2);
+      _ctx.fill();
+      if (drawSize > 2.0 && _level >= 2) {
+        _ctx.globalAlpha = a * 0.72;
+        _ctx.fillStyle = '#fff';
+        _ctx.shadowBlur = 2;
+        _ctx.beginPath();
+        _ctx.arc(pp.x, pp.y, drawSize * 0.35, 0, Math.PI * 2);
+        _ctx.fill();
+      }
+      _ctx.restore();
+    }
+
+    for (var j = _arcs.length - 1; j >= 0; j--) {
+      var arc = _arcs[j];
+      arc.life -= dt;
+      if (arc.life <= 0) { _arcs.splice(j, 1); continue; }
+      _drawArc(_ctx, arc);
+    }
+  }
+
+  var _last = null;
+  function _loop(ts) {
+    if (_last === null) _last = ts;
+    var dt = Math.min((ts - _last) / 1000, 0.05);
+    _last = ts;
+    _tick(dt);
+    _raf = requestAnimationFrame(_loop);
+  }
+
+  window._orbStart = function (frac, level) {
+    _frac = frac; _level = level;
+    _glowEl = null;
+    if (!_ensure()) return;
+    if (!_raf) { _last = null; _raf = requestAnimationFrame(_loop); }
+  };
+  window._orbStop = function () {
+    if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+    _particles = []; _arcs = []; _rings = []; _t = 0;
+    if (_ctx && _canvas) _ctx.clearRect(0, 0, _canvas.width, _canvas.height);
+    if (_glowEl) { _glowEl.style.boxShadow = ''; _glowEl = null; }
+    var w = document.getElementById('bossEnergyWash');
+    if (w) w.className = '';
+  };
+  window._orbUpdate = function (frac, level) {
+    _frac = frac; _level = level;
+    _updateWash();
+  };
+}());
+
+function _orbLevel(frac) {
+  if (frac <= 0)   return 0;
+  if (frac < 0.26) return 1;
+  if (frac < 0.51) return 2;
+  if (frac < 0.76) return 3;
+  return 4;
+}
+
 function resetMagic(unitCount) {
   magicCharge = 0;
   magicMax = unitCount || 1;
   var orb = document.getElementById('magicOrb');
   orb.classList.remove('charged', 'bump');
+  orb.removeAttribute('data-level');
   orb.style.transform = 'scale(.4)';
   orb.style.opacity = '.55';
   var mw = document.getElementById('magicWord');
   mw.textContent = '';
   mw.classList.remove('show');
+  window._orbStop();
 }
 
 function growMagic(fromBox) {
@@ -1015,21 +1498,24 @@ function growMagic(fromBox) {
   var orb = document.getElementById('magicOrb');
   pixieTrail(fromBox, orb);
   setTimeout(function () {
-    var frac = magicCharge / magicMax;
-    orb.style.transform = 'scale(' + (0.4 + 1.1 * frac) + ')'; // more tiles = bigger magic
-    orb.style.opacity = String(0.55 + 0.45 * frac);
+    var frac  = magicCharge / magicMax;
+    var level = _orbLevel(frac);
+    orb.style.transform = 'scale(' + (0.4 + 1.1 * frac) + ')';
+    orb.style.opacity   = String(0.55 + 0.45 * frac);
+    orb.setAttribute('data-level', String(level));
     orb.classList.remove('bump'); void orb.offsetWidth; orb.classList.add('bump');
     if (magicCharge >= magicMax) orb.classList.add('charged');
+    window._orbUpdate(frac, level);
+    window._orbStart(frac, level);
   }, 240);
 }
 
 function pixieTrail(fromEl, toEl) {
-  /* A stream of glowing pixie-dust flies from the placed letter to the orb. */
   if (!fromEl || !toEl) return;
   var a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
   var sx = a.left + a.width / 2, sy = a.top + a.height / 2;
   var tx = b.left + b.width / 2, ty = b.top + b.height / 2;
-  var glyphs = ['\u2726', '\u2727', '\u2728', '\u22C6'];
+  var glyphs = ['✦', '✧', '✨', '⋆'];
   for (var i = 0; i < 6; i++) {
     (function (i) {
       setTimeout(function () {
@@ -1039,10 +1525,11 @@ function pixieTrail(fromEl, toEl) {
         sp.style.fontSize = (0.8 + Math.random() * 0.7) + 'rem';
         var jx = (Math.random() - 0.5) * 26, jy = (Math.random() - 0.5) * 22;
         sp.style.left = (sx - 8 + jx) + 'px';
-        sp.style.top = (sy - 8 + jy) + 'px';
+        sp.style.top  = (sy - 8 + jy) + 'px';
         document.body.appendChild(sp);
         void sp.offsetWidth;
-        sp.style.transform = 'translate(' + (tx - sx - jx + (Math.random() - 0.5) * 12) + 'px,' +
+        sp.style.transform = 'translate(' +
+            (tx - sx - jx + (Math.random() - 0.5) * 12) + 'px,' +
             (ty - sy - jy + (Math.random() - 0.5) * 12) + 'px) scale(.4)';
         sp.style.opacity = '0';
         setTimeout(function () { sp.remove(); }, 620);
@@ -1055,10 +1542,11 @@ function pixieDot(x, y) {
   var d = document.createElement('span');
   d.className = 'pixie-dot';
   d.style.left = (x - 3 + (Math.random() - 0.5) * 10) + 'px';
-  d.style.top = (y - 3 + (Math.random() - 0.5) * 10) + 'px';
+  d.style.top  = (y - 3 + (Math.random() - 0.5) * 10) + 'px';
   document.body.appendChild(d);
   setTimeout(function () { d.remove(); }, 750);
 }
+
 
 function showMagicWord(word) {
   var el = document.getElementById('magicWord');
@@ -1069,6 +1557,7 @@ function showMagicWord(word) {
 function hideMagicWord() {
   document.getElementById('magicWord').classList.remove('show');
   document.getElementById('magicOrb').classList.remove('charged');
+  window._orbStop();
 }
 
 function fireMagicAt(power, done) {
