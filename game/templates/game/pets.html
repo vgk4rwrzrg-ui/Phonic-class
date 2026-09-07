@@ -15,25 +15,41 @@
     --shadow-card: 0 3px 10px rgba(0,0,0,.08);
   }
 
-  /* ---- wrap ---- */
-  .pet-wrap { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
-
-  /* ---- points summary bar ---- */
-  .points-bar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 4px 10px;
-    border-bottom: 1.5px solid oklch(90% 0.03 280);
-    margin-bottom: 6px;
+  /* ---- points summary bar — sits flush under the site nav ---- */
+  .points-summary-bar {
+    width: 100%;
+    background: oklch(97% 0.04 80);
+    border-bottom: 2px solid oklch(88% 0.08 80);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-sizing: border-box;
   }
-  .points-bar-kid {
+  .points-summary-kid {
     font-size: .97rem; font-weight: 700; color: oklch(28% 0.06 280);
+    display: flex; align-items: center; gap: 6px;
   }
-  .points-bar-pts {
+  .points-summary-pts {
     font-size: 1rem; font-weight: 800;
-    background: oklch(97% 0.04 80); border: 2px solid oklch(72% 0.15 80);
-    border-radius: 12px; padding: 5px 16px; color: oklch(30% 0.12 60);
+    background: #fff; border: 2px solid oklch(72% 0.15 80);
+    border-radius: 12px; padding: 4px 14px; color: oklch(30% 0.12 60);
     white-space: nowrap;
   }
+  .points-summary-progress {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;
+    font-size: .82rem; font-weight: 700; color: var(--muted);
+  }
+  .prog-chip {
+    background: #fff; border: 1.5px solid oklch(85% 0.05 280);
+    border-radius: 8px; padding: 3px 10px; white-space: nowrap;
+    color: oklch(40% 0.08 280);
+  }
+  .prog-chip.unlocked { border-color: oklch(72% 0.15 80); color: oklch(38% 0.12 60); }
+
+  /* ---- wrap ---- */
+  .pet-wrap { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
 
   /* ---- buy buttons: equal size grid ---- */
   .buy-section { padding: 18px 0 6px; }
@@ -44,21 +60,27 @@
   }
   @media (max-width: 480px) { .buy-row { grid-template-columns: 1fr; } }
   .buy-col { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+
+  /* wrapper catches taps even when button is disabled */
+  .buy-btn-tap { display: contents; cursor: pointer; }
+
   .buy-btn {
     font-size: 1rem; font-weight: 800; padding: 14px 12px;
     border: none; border-radius: var(--radius-btn);
     cursor: pointer; min-height: 58px; width: 100%;
     transition: filter .15s, transform .1s;
     line-height: 1.3; text-align: center;
+    pointer-events: none; /* tap handled by wrapper */
   }
-  .buy-btn:disabled { opacity: .42; cursor: not-allowed; filter: none; transform: none; }
-  .buy-btn:not(:disabled):hover { filter: brightness(1.08); transform: translateY(-1px); }
-  .buy-btn:not(:disabled):active { transform: translateY(0); }
+  .buy-btn:disabled { opacity: .42; }
   .buy-btn-basic { background: var(--accent); color: #fff; }
   .buy-btn-hd {
     background: linear-gradient(135deg, oklch(55% 0.18 280), oklch(66% 0.16 50));
     color: #fff;
   }
+  .buy-btn-tap:not(.disabled):hover .buy-btn { filter: brightness(1.08); transform: translateY(-1px); }
+  .buy-btn-tap:not(.disabled):active .buy-btn { transform: translateY(0); }
+
   .points-nudge {
     font-size: .82rem; font-weight: 700; color: var(--accent);
     margin: 2px 0 0; min-height: 1.1em; text-align: center;
@@ -148,6 +170,7 @@
     box-shadow: 0 4px 14px rgba(0,0,0,.25); white-space: nowrap;
   }
   .toast.err { background: oklch(40% 0.15 20); }
+  .toast.info { background: oklch(38% 0.14 260); }
 
   @keyframes wobble { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(6deg)} }
   @keyframes shake  { 0%,100%{transform:translateX(-3px)} 50%{transform:translateX(3px)} }
@@ -159,27 +182,35 @@
 <form style="display:none">{% csrf_token %}</form>
 <div id="toasts" aria-live="polite"></div>
 
+<!-- Points summary bar — flush under the site nav -->
+<div class="points-summary-bar">
+  <span class="points-summary-kid">{{ kid.icon }} {{ kid.name }}</span>
+  <span class="points-summary-pts">&#11088; <span id="spendable">{{ spendable }}</span> pts</span>
+  <div class="points-summary-progress" id="progressChips"></div>
+</div>
 
 <div class="pet-wrap">
-  <div class="points-bar">
-    <span class="points-bar-kid">{{ kid.icon }} {{ kid.name }}</span>
-    <span class="points-bar-pts">&#11088; <span id="spendable">{{ spendable }}</span> pts</span>
-  </div>
   <div class="buy-section">
     <div class="buy-row">
       <div class="buy-col">
-        <button class="buy-btn buy-btn-basic" id="buyBasicBtn">
-          &#129370; Basic Egg<br><small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
-        </button>
+        <div class="buy-btn-tap" id="basicTap" role="button" tabindex="0"
+             aria-label="Buy Basic Egg for {{ egg_cost }} points">
+          <button class="buy-btn buy-btn-basic" id="buyBasicBtn" tabindex="-1">
+            &#129370; Basic Egg<br><small style="font-weight:600;opacity:.9;">{{ egg_cost }} pts</small>
+          </button>
+        </div>
         <p class="points-nudge" id="basicNudge" aria-live="polite"></p>
         <p class="buy-desc">A mystery creature hatches!</p>
       </div>
       <div class="buy-col">
-        <button class="buy-btn buy-btn-hd" id="buyHdBtn">
-          &#127775; Legendary Egg<br>
-          <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
-            <span class="hd-badge">LEGENDARY</span></small>
-        </button>
+        <div class="buy-btn-tap" id="hdTap" role="button" tabindex="0"
+             aria-label="Buy Legendary Egg for {{ hd_cost }} points">
+          <button class="buy-btn buy-btn-hd" id="buyHdBtn" tabindex="-1">
+            &#127775; Legendary Egg<br>
+            <small style="font-weight:600;opacity:.9;">{{ hd_cost }} pts
+              <span class="hd-badge">LEGENDARY</span></small>
+          </button>
+        </div>
         <p class="points-nudge" id="hdNudge" aria-live="polite"></p>
         <p class="buy-desc">Amazing creature + 5 fun sayings!</p>
       </div>
@@ -237,14 +268,100 @@ var spendableEl = document.getElementById('spendable');
 var EGG_COST    = {{ egg_cost }};
 var HD_COST     = {{ hd_cost }};
 
-
-function showToast(msg, isErr) {
+/* ---- toasts ---- */
+function showToast(msg, type) {
   var t = document.createElement('div');
-  t.className = 'toast' + (isErr ? ' err' : '');
+  t.className = 'toast' + (type ? ' ' + type : '');
   t.textContent = msg;
   document.getElementById('toasts').appendChild(t);
   setTimeout(function(){ t.remove(); }, 4000);
 }
+
+/* ---- points UI ---- */
+function getSpendable() { return parseInt(spendableEl.textContent, 10) || 0; }
+
+function updatePointsUI(pts) {
+  spendableEl.textContent = pts;
+
+  /* progress chips */
+  var chips = document.getElementById('progressChips');
+  var basicNeeded = Math.max(0, EGG_COST - pts);
+  var hdNeeded    = Math.max(0, HD_COST - pts);
+  var html = '';
+  if (basicNeeded > 0) {
+    html += '<span class="prog-chip">' + basicNeeded + ' more for Basic &#129370;</span>';
+  } else {
+    html += '<span class="prog-chip unlocked">Basic egg ready &#10003;</span>';
+  }
+  if (hdNeeded > 0) {
+    html += '<span class="prog-chip">' + hdNeeded + ' more for Legendary &#127775;</span>';
+  } else {
+    html += '<span class="prog-chip unlocked">Legendary ready &#11088;</span>';
+  }
+  chips.innerHTML = html;
+
+  /* nudge text under buttons */
+  var basicNudge = document.getElementById('basicNudge');
+  var hdNudge    = document.getElementById('hdNudge');
+  if (basicNeeded > 0) {
+    basicNudge.textContent = basicNeeded + ' more points to go! \uD83D\uDCAA';
+  } else {
+    basicNudge.textContent = '';
+  }
+  if (hdNeeded > 0) {
+    hdNudge.textContent = hdNeeded + ' more points to go Legendary! \u2B50';
+  } else {
+    hdNudge.innerHTML = 'You unlocked Legendary! <span style="color:oklch(62% 0.18 60)">\u2728</span>';
+  }
+
+  /* enable/disable buttons */
+  var basicBtn = document.getElementById('buyBasicBtn');
+  var hdBtn    = document.getElementById('buyHdBtn');
+  var basicTap = document.getElementById('basicTap');
+  var hdTap    = document.getElementById('hdTap');
+
+  basicBtn.disabled = (pts < EGG_COST);
+  hdBtn.disabled    = (pts < HD_COST);
+  basicTap.classList.toggle('disabled', pts < EGG_COST);
+  hdTap.classList.toggle('disabled', pts < HD_COST);
+}
+
+/* ---- tap wrappers — fire click or show "need X more pts" toast ---- */
+function handleBuyTap(tier) {
+  var pts      = getSpendable();
+  var cost     = (tier === 'hd') ? HD_COST : EGG_COST;
+  var name     = (tier === 'hd') ? 'Legendary Egg' : 'Basic Egg';
+  var needed   = cost - pts;
+  if (needed > 0) {
+    showToast('You need ' + needed + ' more point' + (needed === 1 ? '' : 's') + ' for the ' + name + '!', 'info');
+    return;
+  }
+  buyEgg(tier);
+}
+
+function setupTap(tapId, tier) {
+  var el = document.getElementById(tapId);
+  el.addEventListener('click', function() { handleBuyTap(tier); });
+  el.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBuyTap(tier); }
+  });
+}
+setupTap('basicTap', 'basic');
+setupTap('hdTap', 'hd');
+
+/* ---- buy egg ---- */
+function buyEgg(tier) {
+  var tapEl = document.getElementById(tier === 'hd' ? 'hdTap' : 'basicTap');
+  tapEl.classList.add('disabled');
+  post('/buy-egg/', { tier: tier }).then(function(d) {
+    if (d.error) { showToast(d.error, 'err'); updatePointsUI(getSpendable()); return; }
+    updatePointsUI(d.spendable);
+    addEggCard(d.pet_id, tier);
+    showToast(tier === 'hd' ? '\u2728 Legendary egg acquired!' : '\uD83E\uDD5A Egg added!');
+  }).catch(function() { showToast('Something went wrong', 'err'); updatePointsUI(getSpendable()); });
+}
+
+/* ---- helpers ---- */
 function post(url, body) {
   return fetch(url, {
     method: 'POST',
@@ -290,217 +407,149 @@ function revealPet(petId, pet) {
         + s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
         + '</option>';
     }).join('');
-    sayingHtml = '<div class="saying-picker"><label>&#128172; Pet says:</label>'
-      + '<select data-saying="' + petId + '">' + opts + '</select></div>';
+    sayingHtml = '<div class="saying-picker"><label>&#128172; Pet says:</label><select data-saying="' + petId + '">' + opts + '</select></div>';
   }
-  var badge  = isHd ? '<span class="hd-badge">LEGENDARY</span>' : '';
-  var talkHd = isHd ? ' data-hd-talk="' + petId + '"' : '';
+  var badgeHtml = isHd ? '<span class="hd-badge">LEGENDARY</span>' : '';
   card.innerHTML =
-    '<img class="pet-img fade-in" src="/petimage/' + petId + '/" alt="' + pet.name + '">'
-    + '<div class="pet-name">' + pet.name + ' ' + badge + '</div>'
-    + '<div class="pet-sub">&nbsp;</div>'
-    + sayingHtml
-    + '<div class="pet-actions">'
-    + '<button class="talk-btn" data-talk="' + petId + '"' + talkHd + '>&#128266; Talk</button>'
-    + '<button class="comp-btn" data-comp="' + petId + '">Take on quest</button>'
-    + '</div>';
-  if (isHd) card.classList.add('hd-pet');
+    '<img class="pet-img fade-in" src="/petimage/' + petId + '/" alt="' + (pet.name||'Pet') + '">' +
+    '<div class="pet-name">' + (pet.name||'Mystery Pet') + badgeHtml + '</div>' +
+    '<div class="pet-sub">&nbsp;</div>' +
+    sayingHtml +
+    '<div class="pet-actions">' +
+      '<button class="talk-btn" data-talk="' + petId + '"' + (isHd ? ' data-hd-talk="' + petId + '"' : '') + '>&#128266; Talk</button>' +
+      '<button class="comp-btn" data-comp="' + petId + '">Take on quest</button>' +
+    '</div>';
+  card.className = 'pet-card' + (isHd ? ' hd-pet' : '');
+  bindCard(card);
   var noPets = document.getElementById('noPets');
   if (noPets) noPets.remove();
-  showToast(pet.name + ' hatched!');
 }
 
-/* ---- add fresh egg card inline ---- */
-function addEggCard(pet) {
-  var grid   = document.getElementById('petGrid');
-  var noPets = document.getElementById('noPets');
-  if (noPets) noPets.remove();
-  var isHd = (pet.tier === 'hd');
-  var card = document.createElement('div');
-  card.className    = 'pet-card' + (isHd ? ' hd-pet' : '');
-  card.dataset.id   = pet.id;
-  card.dataset.tier = pet.tier;
-  var badge = isHd ? ' <span class="hd-badge">LEGENDARY</span>' : '';
-  card.innerHTML =
-    '<div class="egg-wrapper" id="egg-' + pet.id + '">'
-    + '<span class="egg-face" id="egg-face-' + pet.id + '">&#129370;</span>'
-    + '<span class="egg-crack-overlay" id="egg-crack-' + pet.id + '"></span>'
-    + '</div>'
-    + '<div class="pet-name" id="pet-name-' + pet.id + '">Mystery Egg' + badge + '</div>'
-    + '<div class="hatch-status-msg" id="hatch-msg-' + pet.id + '">Tap to hatch!</div>'
-    + '<div class="pet-actions">'
-    + '<button class="hatch-btn" id="hatch-btn-' + pet.id + '" data-hatch="' + pet.id + '">'
-    + '&#10024; Hatch!</button></div>';
-  grid.appendChild(card);
+/* ---- add egg card ---- */
+function addEggCard(petId, tier) {
+  var isHd = (tier === 'hd');
+  var badgeHtml = isHd ? ' <span class="hd-badge">LEGENDARY</span>' : '';
+  var div = document.createElement('div');
+  div.className = 'pet-card' + (isHd ? ' hd-pet' : '');
+  div.dataset.id   = petId;
+  div.dataset.tier = tier;
+  div.innerHTML =
+    '<div class="egg-wrapper" id="egg-' + petId + '">' +
+      '<span class="egg-face" id="egg-face-' + petId + '">&#129370;</span>' +
+      '<span class="egg-crack-overlay" id="egg-crack-' + petId + '"></span>' +
+    '</div>' +
+    '<div class="pet-name" id="pet-name-' + petId + '">Mystery Egg' + badgeHtml + '</div>' +
+    '<div class="hatch-status-msg" id="hatch-msg-' + petId + '">Tap to hatch!</div>' +
+    '<div class="pet-actions">' +
+      '<button class="hatch-btn" id="hatch-btn-' + petId + '" data-hatch="' + petId + '">&#10024; Hatch!</button>' +
+    '</div>';
+  document.getElementById('petGrid').appendChild(div);
+  bindCard(div);
 }
 
-/* ---- resilient polling ---- */
-var _pollers   = {};
-var _pollFails = {};
-
-function startPolling(petId) {
-  if (_pollers[petId]) return;
-  _pollFails[petId] = 0;
-  _pollers[petId] = setInterval(function() {
-    get('/api/pet/hatch/' + petId + '/status/')
-      .then(function(d) {
-        _pollFails[petId] = 0;
-        if (!d.ok) return;
-        setEggStage(petId, d.status);
-        if (d.status === 'complete' && d.hatched && d.pet) {
-          clearInterval(_pollers[petId]); delete _pollers[petId];
-          revealPet(petId, d.pet);
-        } else if (d.status === 'failed') {
-          clearInterval(_pollers[petId]); delete _pollers[petId];
-          var btn = document.getElementById('hatch-btn-' + petId);
-          var msg = document.getElementById('hatch-msg-' + petId);
-          if (btn) { btn.disabled = false; btn.innerHTML = '&#10024; Try again'; }
-          if (msg) msg.textContent = 'Something went wrong - tap to try again.';
-        }
-      })
-      .catch(function() {
-        _pollFails[petId] = (_pollFails[petId] || 0) + 1;
-        if (_pollFails[petId] >= 8) {
-          clearInterval(_pollers[petId]); delete _pollers[petId];
-          var btn = document.getElementById('hatch-btn-' + petId);
-          var msg = document.getElementById('hatch-msg-' + petId);
-          if (btn) { btn.disabled = false; btn.innerHTML = '&#10024; Try again'; }
-          if (msg) msg.textContent = 'Check your connection, then tap to retry.';
-        }
-      });
-  }, 2000);
-}
-
-/* ---- grid event delegation ---- */
-document.getElementById('petGrid').addEventListener('click', function(ev) {
-  var b = ev.target.closest('button');
-  if (!b) return;
-
-  if (b.dataset.hatch) {
-    if (b.disabled) return;
-    var petId = parseInt(b.dataset.hatch, 10);
-    b.disabled = true;
-    b.textContent = 'Hatching...';
-    setEggStage(petId, 'cracking');
-    post('/api/pet/hatch/' + petId + '/')
-      .then(function(d) {
-        if (!d.ok) {
-          b.disabled = false;
-          b.innerHTML = '&#10024; Hatch!';
-          var msg = document.getElementById('hatch-msg-' + petId);
-          if (msg) msg.textContent = (d.error || 'Something went wrong') + ' - tap to try again.';
-          return;
-        }
-        if (d.status === 'complete' && d.pet) { revealPet(petId, d.pet); return; }
-        setEggStage(petId, d.status || 'cracking');
-        startPolling(petId);
-      })
-      .catch(function() { startPolling(petId); });
-    return;
-  }
-
-  if (b.dataset.talk) {
-    var pid = b.dataset.talk;
-    var idx = b.dataset.hdTalk
-      ? parseInt((document.querySelector('[data-saying="' + pid + '"]') || {value:0}).value, 10)
-      : Math.floor(Math.random() * 5);
-    var a = new Audio('/petsound/' + pid + '/' + idx + '/');
-    a.play().catch(function(){ showToast('No voice yet - try again soon!', true); });
-    return;
-  }
-
-  if (b.dataset.comp) {
-    post('/api/pet/companion/' + b.dataset.comp + '/').then(function(d) {
-      if (d.ok) {
-        showToast(d.pet.name + ' will join your quest!');
-        setTimeout(function(){ location.reload(); }, 900);
-      } else {
-        showToast(d.error || 'Could not pick buddy', true);
+/* ---- hatch ---- */
+var pollers = {};
+function startHatchPoller(petId) {
+  if (pollers[petId]) return;
+  pollers[petId] = setInterval(function() {
+    get('/hatch-status/' + petId + '/').then(function(d) {
+      if (!d.status) return;
+      setEggStage(petId, d.status);
+      if (d.status === 'done') {
+        clearInterval(pollers[petId]); delete pollers[petId];
+        revealPet(petId, d.pet);
+        showToast('\uD83C\uDF89 ' + (d.pet.name||'A new pet') + ' hatched!');
+      } else if (d.status === 'failed') {
+        clearInterval(pollers[petId]); delete pollers[petId];
+        var btn = document.getElementById('hatch-btn-' + petId);
+        var msg = document.getElementById('hatch-msg-' + petId);
+        if (btn) { btn.disabled = false; btn.textContent = '\u2728 Hatch!'; }
+        if (msg) msg.textContent = 'Tap to try again';
       }
     });
+  }, 1500);
+}
+
+function hatchPet(petId) {
+  var btn = document.getElementById('hatch-btn-' + petId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Hatching...'; }
+  post('/hatch/', { pet_id: petId }).then(function(d) {
+    if (d.error) {
+      showToast(d.error, 'err');
+      if (btn) { btn.disabled = false; btn.textContent = '\u2728 Hatch!'; }
+      return;
+    }
+    setEggStage(petId, 'cracking');
+    startHatchPoller(petId);
+  });
+}
+
+/* ---- companion / talk ---- */
+function setCompanion(petId) {
+  post('/set-companion/', { pet_id: petId }).then(function(d) {
+    if (d.error) { showToast(d.error, 'err'); return; }
+    document.querySelectorAll('.pet-card').forEach(function(c) {
+      c.classList.remove('companion');
+      var sub = c.querySelector('.pet-sub');
+      if (sub) sub.innerHTML = '&nbsp;';
+      var btn = c.querySelector('[data-comp]');
+      if (btn) btn.style.display = '';
+    });
+    var card = document.querySelector('[data-id="' + petId + '"]');
+    if (card) {
+      card.classList.add('companion');
+      var sub = card.querySelector('.pet-sub');
+      if (sub) sub.innerHTML = '&#11088; Quest buddy!';
+      var btn = card.querySelector('[data-comp]');
+      if (btn) btn.style.display = 'none';
+    }
+    showToast('\uD83D\uDC3E ' + (d.name||'Pet') + ' is your quest buddy!');
+  });
+}
+
+function talkPet(petId, isHd) {
+  if (isHd) {
+    var sel = document.querySelector('[data-saying="' + petId + '"]');
+    var idx = sel ? parseInt(sel.value, 10) : 0;
+    post('/pet-saying/', { pet_id: petId, idx: idx }).then(function(d) {
+      if (d.saying) showToast('\uD83D\uDCAC ' + d.saying);
+    });
+  } else {
+    post('/pet-talk/', { pet_id: petId }).then(function(d) {
+      if (d.saying) showToast('\uD83D\uDCAC ' + d.saying);
+    });
   }
+}
+
+/* ---- bind card events ---- */
+function bindCard(card) {
+  card.querySelectorAll('[data-hatch]').forEach(function(btn) {
+    btn.addEventListener('click', function() { hatchPet(btn.dataset.hatch); });
+  });
+  card.querySelectorAll('[data-comp]').forEach(function(btn) {
+    btn.addEventListener('click', function() { setCompanion(btn.dataset.comp); });
+  });
+  card.querySelectorAll('[data-talk]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      talkPet(btn.dataset.talk, btn.hasAttribute('data-hd-talk'));
+    });
+  });
+}
+document.querySelectorAll('.pet-card').forEach(bindCard);
+
+/* ---- resume in-progress hatches on load ---- */
+document.querySelectorAll('.pet-card[data-id]').forEach(function(card) {
+  var petId = card.dataset.id;
+  if (!card.querySelector('.hatch-btn')) return;
+  get('/hatch-status/' + petId + '/').then(function(d) {
+    if (d.status && d.status !== 'pending' && d.status !== 'failed') {
+      setEggStage(petId, d.status);
+      startHatchPoller(petId);
+    }
+  });
 });
 
-/* ---- buy ---- */
-function updateBuyButtons(pts) {
-  var basicBtn   = document.getElementById('buyBasicBtn');
-  var hdBtn      = document.getElementById('buyHdBtn');
-  var basicNudge = document.getElementById('basicNudge');
-  var hdNudge    = document.getElementById('hdNudge');
-
-  basicBtn.disabled = (pts < EGG_COST);
-  hdBtn.disabled    = (pts < HD_COST);
-
-  if (basicNudge) {
-    if (pts >= EGG_COST) {
-      basicNudge.textContent = '';
-    } else {
-      var need = EGG_COST - pts;
-      basicNudge.textContent = need + ' more point' + (need === 1 ? '' : 's') + ' to go!';
-    }
-  }
-  if (hdNudge) {
-    if (pts >= HD_COST) {
-      hdNudge.textContent = 'You unlocked Legendary! ✨';
-      hdNudge.style.color = 'oklch(60% 0.18 80)';
-    } else {
-      var needHd = HD_COST - pts;
-      hdNudge.textContent = needHd + ' more point' + (needHd === 1 ? '' : 's') + ' to go Legendary! ⭐';
-      hdNudge.style.color = '';
-    }
-  }
-}
-
-function buyEgg(tier, btn) {
-  if (btn.disabled) {
-    var cost  = (tier === 'hd' ? HD_COST : EGG_COST);
-    var cur   = parseInt(spendableEl ? spendableEl.textContent : '0', 10);
-    if (cur < cost) {
-      var need  = cost - cur;
-      var label = tier === 'hd' ? 'a Legendary egg' : 'a Basic egg';
-      showToast('You need ' + need + ' more point' + (need === 1 ? '' : 's') + ' for ' + label + '! Keep spelling! ✊', true);
-    }
-    return;
-  }
-  btn.disabled = true;
-  var nonce = tier + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
-  post('/api/pet/buy/', {nonce: nonce, tier: tier})
-    .then(function(d) {
-      btn.disabled = false;
-      if (d.ok && !d.duplicate) {
-        if (spendableEl) spendableEl.textContent = d.spendable;
-        addEggCard(d.pet);
-        updateBuyButtons(d.spendable);
-        showToast(tier === 'hd' ? 'Legendary egg ready - tap Hatch!' : 'Mystery egg - tap Hatch!');
-      } else if (d.ok && d.duplicate) {
-        showToast('You already have that egg!');
-      } else if (d.error === 'not_enough_points') {
-        var cost  = (tier === 'hd' ? HD_COST : EGG_COST);
-        var cur   = parseInt(spendableEl ? spendableEl.textContent : '0', 10);
-        var need  = cost - cur;
-        var label = tier === 'hd' ? 'a Legendary egg' : 'a Basic egg';
-        showToast('You need ' + need + ' more point' + (need === 1 ? '' : 's') + ' for ' + label + '! Keep spelling! ✊', true);
-        updateBuyButtons(parseInt(spendableEl ? spendableEl.textContent : '0', 10));
-      } else {
-        showToast(d.error || 'Could not buy egg', true);
-      }
-    })
-    .catch(function(){ btn.disabled = false; showToast('Connection problem', true); });
-}
-
-document.getElementById('buyBasicBtn').addEventListener('click', function() { buyEgg('basic', this); });
-document.getElementById('buyHdBtn').addEventListener('click',    function() { buyEgg('hd',    this); });
-
-/* ---- init nudge on load ---- */
-updateBuyButtons({{ spendable }});
-
-/* ---- resume polling for any in-progress eggs ---- */
-{% for p in pets %}{% if not p.hatched and p.status != 'pending' %}
-(function() {
-  var id = {{ p.pk }};
-  setEggStage(id, '{{ p.status }}');
-  startPolling(id);
-}());
-{% endif %}{% endfor %}
+/* ---- initial UI render ---- */
+updatePointsUI({{ spendable }});
 </script>
 {% endblock %}
