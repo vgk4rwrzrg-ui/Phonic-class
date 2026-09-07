@@ -612,18 +612,43 @@ function toggleRecord(kind, value, btn) {
     return;
   }
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-    var mime = 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
-    else if (MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
-    else if (MediaRecorder.isTypeSupported('audio/ogg')) mime = 'audio/ogg';
+    // Pick a container the browser really supports (Safari/iPad: audio/mp4).
+    var mime = '';
+    var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+    for (var ci = 0; ci < candidates.length; ci++) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported &&
+          MediaRecorder.isTypeSupported(candidates[ci])) { mime = candidates[ci]; break; }
+    }
     recStream = stream; recKind = kind; recValue = value; recBtn = btn;
     var chunks = [];
-    recorder = new MediaRecorder(stream, { mimeType: mime });
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime })
+                      : new MediaRecorder(stream);   // let the browser choose
+    } catch (err) {
+      try { recorder = new MediaRecorder(stream); }  // retry without options
+      catch (err2) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        alert('This browser cannot record audio (' + (err2 && err2.name) + ') \u2014 use the \u2B06 upload instead.');
+        recorder = null;
+        return;
+      }
+    }
+    if (recorder.mimeType) mime = recorder.mimeType;  // what we actually got
     recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onerror = function (e) {
+      var name = (e && e.error && e.error.name) || 'unknown error';
+      alert('Recording stopped by the browser: ' + name);
+    };
     recorder.onstop = function () {
       recStream.getTracks().forEach(function (t) { t.stop(); });
       if (recBtn) { recBtn.textContent = '🎙'; recBtn.classList.remove('recording'); }
+      recorder = null;
       var blob = new Blob(chunks, { type: mime });
+      if (!blob.size) {
+        alert('No audio was captured \u2014 the microphone stopped right away. ' +
+              'Check the mic permission for this site, close other apps using the mic, and try a slightly longer recording.');
+        return;
+      }
       var fd = new FormData();
       if (recKind === 'word') fd.append('word', recValue);
       else fd.append('grapheme', recValue);
@@ -635,11 +660,21 @@ function toggleRecord(kind, value, btn) {
           else alert('Save failed' + (res && res.error ? ': ' + res.error : ''));
         })
         .catch(function () { alert('Save failed \u2014 check your connection.'); });
-      recorder = null;
     };
-    recorder.start();
+    // If the mic track dies (permission pulled, hardware sleep), end cleanly
+    // instead of hanging in the recording state.
+    stream.getTracks().forEach(function (t) {
+      t.addEventListener('ended', function () {
+        if (recorder && recorder.state === 'recording') recorder.stop();
+      });
+    });
+    recorder.start(250);   // collect chunks as we go (Safari-safe)
     if (btn) { btn.textContent = '⏹'; btn.classList.add('recording'); }
-  }).catch(function () { alert('Microphone access denied.'); });
+    showToast('Recording\u2026 tap \u23F9 to stop', 'success');
+  }).catch(function (err) {
+    alert('Microphone unavailable: ' + ((err && err.name) || 'unknown') +
+          '. Allow mic access for this site in the browser settings.');
+  });
 }
 
 var uploadForm = document.getElementById('uploadForm');
