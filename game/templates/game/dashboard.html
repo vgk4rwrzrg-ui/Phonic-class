@@ -609,6 +609,8 @@ function extForType(t) {
 // converts to MP3 anyway.
 var wavRec = null;       // active recording session, or null
 var wavStarting = false; // guards against double-fired taps while opening mic
+var lastToggleAt = 0;    // debounce: some touch browsers fire the tap handler
+                         // twice (touchend + click) for one physical tap
 
 function encodeWav(buffers, totalLen, sampleRate) {
   var data = new Float32Array(totalLen);
@@ -631,17 +633,19 @@ function encodeWav(buffers, totalLen, sampleRate) {
   return { blob: new Blob([buf], { type: 'audio/wav' }), peak: peak };
 }
 
-function stopWavRecording() {
+function stopWavRecording(reason) {
   var rec = wavRec;
   if (!rec) return;
-  // Ignore ghost stops: some touch browsers fire the tap handler twice, which
-  // used to start-and-instantly-stop the recording.
-  if (Date.now() - rec.startedAt < 400) return;
   wavRec = null;
+  if (rec.timer) clearInterval(rec.timer);
   try { rec.proc.disconnect(); rec.source.disconnect(); } catch (e) {}
   rec.stream.getTracks().forEach(function (t) { t.stop(); });
   try { rec.ctx.close(); } catch (e) {}
   if (rec.btn) { rec.btn.textContent = '\uD83C\uDF99'; rec.btn.classList.remove('recording'); }
+  if (reason === 'deadmic') {
+    alert('The microphone opened but no audio is arriving \u2014 this browser is blocking recording. Try Chrome, or use the \u2B06 upload instead.');
+    return;
+  }
   if (!rec.totalLen) {
     alert('No audio was captured \u2014 check the mic permission for this site and close other apps using the microphone.');
     return;
@@ -666,48 +670,65 @@ function stopWavRecording() {
 }
 
 function toggleRecord(kind, value, btn) {
+  // One physical tap can fire this twice (touchend + click). Treat any two
+  // calls inside 350ms as the SAME tap, otherwise the second fire of a stop
+  // tap instantly restarts the recording and the button never leaves the
+  // recording state.
+  var t = Date.now();
+  if (t - lastToggleAt < 350) return;
+  lastToggleAt = t;
+
   if (wavRec) { stopWavRecording(); return; }
-  if (wavStarting) return;   // double-fired tap while the mic is opening
+  if (wavStarting) return;   // mic permission prompt still open
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     alert('Recording needs a modern browser over HTTPS.');
     return;
   }
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) {
+    alert('This browser cannot record audio \u2014 use the \u2B06 upload instead.');
+    return;
+  }
+  // Create + resume the AudioContext HERE, synchronously inside the tap
+  // gesture: iOS Safari can leave a context created later (inside the
+  // getUserMedia promise) suspended forever.
+  var ctx = new AC();
+  if (ctx.state === 'suspended') ctx.resume();
   wavStarting = true;
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) {
-      stream.getTracks().forEach(function (t) { t.stop(); });
-      wavStarting = false;
-      alert('This browser cannot record audio \u2014 use the \u2B06 upload instead.');
-      return;
-    }
-    var ctx = new AC();
-    var resume = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
-    resume.then(function () {
-      var source = ctx.createMediaStreamSource(stream);
-      var proc = ctx.createScriptProcessor(4096, 1, 1);
-      var rec = { ctx: ctx, stream: stream, source: source, proc: proc,
-                  buffers: [], totalLen: 0, sampleRate: ctx.sampleRate,
-                  startedAt: Date.now(), kind: kind, value: value, btn: btn };
-      proc.onaudioprocess = function (e) {
-        if (wavRec !== rec) return;
-        var ch = e.inputBuffer.getChannelData(0);
-        rec.buffers.push(new Float32Array(ch));
-        rec.totalLen += ch.length;
-        if (rec.totalLen > rec.sampleRate * 30) stopWavRecording();  // 30s cap
-      };
-      source.connect(proc);
-      proc.connect(ctx.destination);   // required or onaudioprocess never fires
-      stream.getTracks().forEach(function (t) {
-        t.addEventListener('ended', function () { if (wavRec === rec) stopWavRecording(); });
-      });
-      wavRec = rec;
-      wavStarting = false;
-      if (btn) { btn.textContent = '\u23F9'; btn.classList.add('recording'); }
-      showToast('Recording\u2026 tap \u23F9 to stop', 'success');
+    var source = ctx.createMediaStreamSource(stream);
+    var proc = ctx.createScriptProcessor(4096, 1, 1);
+    var rec = { ctx: ctx, stream: stream, source: source, proc: proc,
+                buffers: [], totalLen: 0, sampleRate: ctx.sampleRate,
+                startedAt: Date.now(), kind: kind, value: value, btn: btn, timer: null };
+    proc.onaudioprocess = function (e) {
+      if (wavRec !== rec) return;
+      var ch = e.inputBuffer.getChannelData(0);
+      rec.buffers.push(new Float32Array(ch));
+      rec.totalLen += ch.length;
+      if (rec.totalLen > rec.sampleRate * 30) stopWavRecording();  // 30s cap
+    };
+    source.connect(proc);
+    proc.connect(ctx.destination);   // required or onaudioprocess never fires
+    stream.getTracks().forEach(function (t) {
+      t.addEventListener('ended', function () { if (wavRec === rec) stopWavRecording(); });
     });
+    wavRec = rec;
+    wavStarting = false;
+    if (btn) { btn.textContent = '\u23F9'; btn.classList.add('recording'); }
+    showToast('Recording\u2026 tap \u23F9 to stop', 'success');
+    // Live seconds counter on the button, and a dead-mic watchdog: if the
+    // browser delivers no audio frames at all in the first 2s, stop with a
+    // clear explanation instead of recording nothing forever.
+    rec.timer = setInterval(function () {
+      if (wavRec !== rec) { clearInterval(rec.timer); return; }
+      var secs = Math.round((Date.now() - rec.startedAt) / 1000);
+      if (!rec.totalLen && secs >= 2) { stopWavRecording('deadmic'); return; }
+      if (rec.btn) rec.btn.textContent = '\u23F9 ' + secs + 's';
+    }, 500);
   }).catch(function (err) {
     wavStarting = false;
+    try { ctx.close(); } catch (e) {}
     alert('Microphone unavailable: ' + ((err && err.name) || 'unknown') +
           '. Allow mic access for this site in the browser settings.');
   });
