@@ -3,15 +3,133 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1{% endblock %}">
-<title>{% block title %}Phonics Class{% endblock %}</title>
+<title>{% block title %}Spell Bee{% endblock %}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0;
          background: #f0f7ff; color: #234; }
-  header { background: #4a90d9; color: #fff; padding: 10px 16px;
-           display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  header a { color: #fff; text-decoration: none; font-weight: 600; }
-  header .brand { font-size: 1.2em; }
+
+  /* ── Top nav bar ── */
+  .sb-header {
+    background: oklch(22% 0.06 280);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    height: 54px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+  .sb-hamburger {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.45rem;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background .15s;
+  }
+  .sb-hamburger:hover { background: rgba(255,255,255,.12); }
+  .sb-hamburger:focus-visible { outline: 2px solid oklch(72% 0.15 80); outline-offset: 2px; }
+  .sb-brand {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+    color: oklch(82% 0.14 80);
+    text-decoration: none;
+    flex: 1;
+  }
+
+  /* ── Drawer overlay ── */
+  .sb-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 198;
+    background: rgba(0,0,0,.45);
+    backdrop-filter: blur(2px);
+  }
+  .sb-overlay.open { display: block; }
+
+  /* ── Slide-out drawer ── */
+  .sb-drawer {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100%;
+    width: 270px;
+    background: oklch(20% 0.07 280);
+    color: #fff;
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.4,0,.2,1);
+    z-index: 199;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 6px 0 32px rgba(0,0,0,.4);
+  }
+  .sb-drawer.open { transform: translateX(0); }
+
+  .sb-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+  .sb-drawer-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: oklch(82% 0.14 80);
+    letter-spacing: .03em;
+  }
+  .sb-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.7);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    line-height: 1;
+    transition: color .15s, background .15s;
+  }
+  .sb-close:hover { color: #fff; background: rgba(255,255,255,.1); }
+  .sb-close:focus-visible { outline: 2px solid oklch(72% 0.15 80); outline-offset: 2px; }
+
+  .sb-nav {
+    flex: 1;
+    padding: 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+  }
+  .sb-nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255,255,255,.85);
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 11px 14px;
+    border-radius: 10px;
+    transition: background .15s, color .15s;
+  }
+  .sb-nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .sb-nav a:focus-visible { outline: 2px solid oklch(72% 0.15 80); outline-offset: 2px; }
+  .sb-nav a .nav-icon { font-size: 1.2rem; width: 24px; text-align: center; flex-shrink: 0; }
+  .sb-nav .nav-divider {
+    height: 1px;
+    background: rgba(255,255,255,.08);
+    margin: 6px 4px;
+  }
+
   main { max-width: 760px; margin: 0 auto; padding: 16px; }
   .card { background: #fff; border-radius: 14px; padding: 16px;
           box-shadow: 0 2px 6px rgba(0,0,0,.08); margin-bottom: 16px; }
@@ -27,15 +145,89 @@
 {% block extra_head %}{% endblock %}
 </head>
 <body>
+
 {% block header %}
-<header>
-  <span class="brand">&#128292; Phonics Class</span>
-  <a href="{% url 'kids_root' %}">Play</a>
-  <a href="{% url 'leaderboard' %}">Leaderboard</a>
-  {% if user.is_authenticated %}<a href="{% url 'dashboard' %}">Teacher</a>{% endif %}
+<!-- Overlay -->
+<div class="sb-overlay" id="sbOverlay" aria-hidden="true"></div>
+
+<!-- Slide-out drawer -->
+<nav class="sb-drawer" id="sbDrawer" aria-label="Site navigation" aria-hidden="true">
+  <div class="sb-drawer-head">
+    <span class="sb-drawer-title">🐝 Spell Bee</span>
+    <button class="sb-close" id="sbClose" aria-label="Close menu">&times;</button>
+  </div>
+  <div class="sb-nav" role="list">
+    <a href="{% url 'kids_root' %}" role="listitem">
+      <span class="nav-icon">🏠</span> Home
+    </a>
+    <a href="{% url 'picker' %}" role="listitem">
+      <span class="nav-icon">🎮</span> Play
+    </a>
+    <a href="{% url 'leaderboard' %}" role="listitem">
+      <span class="nav-icon">🏆</span> Leaderboard
+    </a>
+    <a href="{% url 'pet_area' %}" role="listitem">
+      <span class="nav-icon">🥚</span> My Pets
+    </a>
+    <div class="nav-divider"></div>
+    {% if user.is_authenticated %}
+    <a href="{% url 'dashboard' %}" role="listitem">
+      <span class="nav-icon">📋</span> Teacher Dashboard
+    </a>
+    <a href="{% url 'logout' %}" role="listitem">
+      <span class="nav-icon">🚪</span> Log out
+    </a>
+    {% else %}
+    <a href="{% url 'login' %}" role="listitem">
+      <span class="nav-icon">🔑</span> Teacher Login
+    </a>
+    {% endif %}
+  </div>
+</nav>
+
+<!-- Sticky header bar -->
+<header class="sb-header">
+  <button class="sb-hamburger" id="sbMenuBtn" aria-label="Open menu"
+          aria-controls="sbDrawer" aria-expanded="false">&#9776;</button>
+  <a href="{% url 'kids_root' %}" class="sb-brand">🐝 Spell Bee</a>
+  {% block header_extra %}{% endblock %}
 </header>
 {% endblock %}
+
 <main>{% block content %}{% endblock %}</main>
+
 {% block extra_script %}{% endblock %}
+
+<script>
+(function () {
+  var btn     = document.getElementById('sbMenuBtn');
+  var drawer  = document.getElementById('sbDrawer');
+  var overlay = document.getElementById('sbOverlay');
+  var close   = document.getElementById('sbClose');
+  if (!btn || !drawer) return;
+
+  function openDrawer() {
+    drawer.classList.add('open');
+    overlay.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    btn.setAttribute('aria-expanded', 'true');
+    close.focus();
+  }
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    overlay.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.focus();
+  }
+
+  btn.addEventListener('click', openDrawer);
+  close.addEventListener('click', closeDrawer);
+  overlay.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+  });
+})();
+</script>
 </body>
 </html>
