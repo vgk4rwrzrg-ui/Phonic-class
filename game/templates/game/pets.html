@@ -329,7 +329,7 @@ function buyTap(tier) {
   var btn   = document.getElementById(btnId);
   if (btn) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
 
-  fetch('/buy-egg/', {
+  fetch('/api/pet/buy/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
     body: JSON.stringify({ tier: tier })
@@ -424,7 +424,7 @@ var pollers = {};
 function startHatchPoller(petId) {
   if (pollers[petId]) return;
   pollers[petId] = setInterval(function() {
-    fetch('/hatch-status/' + petId + '/')
+    fetch('/api/pet/hatch/' + petId + '/status/')
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (!d.status) return;
@@ -452,10 +452,10 @@ function bindCard(card) {
       var petId = hatchBtn.dataset.hatch || card.dataset.id;
       hatchBtn.disabled = true;
       hatchBtn.textContent = 'Hatching...';
-      fetch('/hatch/', {
+      fetch('/api/pet/hatch/' + petId + '/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
-        body: JSON.stringify({ pet_id: petId })
+        body: JSON.stringify({})
       })
       .then(function(r) { return r.json(); })
       .then(function(d) {
@@ -480,9 +480,11 @@ function bindCard(card) {
   if (talkBtn) {
     talkBtn.addEventListener('click', function() {
       var petId = talkBtn.dataset.talk;
-      fetch('/pet-talk/' + petId + '/')
-        .then(function(r) { return r.json(); })
-        .then(function(d) { if (d.text) showToast('&#128172; ' + d.text); });
+      fetch('/petsound/' + petId + '/0/')
+        .then(function(r) {
+          if (r.ok) showToast('&#128172; Your pet speaks!');
+          else showToast('Pet voice coming soon!', 'info');
+        });
     });
   }
 
@@ -490,10 +492,10 @@ function bindCard(card) {
   if (compBtn) {
     compBtn.addEventListener('click', function() {
       var petId = compBtn.dataset.comp;
-      fetch('/set-companion/', {
+      fetch('/api/pet/companion/' + petId + '/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
-        body: JSON.stringify({ pet_id: petId })
+        body: JSON.stringify({})
       })
       .then(function(r) { return r.json(); })
       .then(function(d) {
@@ -518,11 +520,7 @@ function bindCard(card) {
   if (sayingSel) {
     sayingSel.addEventListener('change', function() {
       var petId = sayingSel.dataset.saying;
-      fetch('/pet-saying/' + petId + '/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
-        body: JSON.stringify({ index: parseInt(sayingSel.value, 10) })
-      });
+      fetch('/petsound/' + petId + '/' + parseInt(sayingSel.value, 10) + '/');
     });
   }
 }
@@ -533,7 +531,7 @@ document.addEventListener('DOMContentLoaded', function() {
     bindCard(card);
     if (card.querySelector('.hatch-btn')) {
       var petId = card.dataset.id;
-      fetch('/hatch-status/' + petId + '/')
+      fetch('/api/pet/hatch/' + petId + '/status/')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.status && d.status !== 'pending' && d.status !== 'failed') {
