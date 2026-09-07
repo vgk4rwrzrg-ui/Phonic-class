@@ -5,9 +5,9 @@ Run once (network + ffmpeg), then: python manage.py seedsounds
 X and QU are built by concatenating K+S and K+W.
 """
 import os
+import time
 import re
 import subprocess
-import tempfile
 
 import requests
 from django.core.management.base import BaseCommand
@@ -232,28 +232,108 @@ def write_attribution(path):
 
 
 class Command(BaseCommand):
-    help = "Fetch + process bundled phoneme recordings (network + ffmpeg)."
+    help = "Fetch + process bundled phoneme recordings (network + ffmpeg). Resumable."
+
+    USER_AGENT = ("PhonicClassSeedFetcher/1.1 "
+                  "(https://github.com/vgk4rwrzrg-ui/Phonic-class; classroom app; "
+                  "one-time seed download)")
+    DELAY_SECONDS = 3.0      # polite gap between requests
+    MAX_ATTEMPTS = 4         # per file, with Retry-After/backoff between tries
+    MAX_WAIT = 180           # cap any single Retry-After wait
+
+    def add_arguments(self, parser):
+        parser.add_argument("--force", action="store_true",
+                            help="Re-download and re-process even if files exist.")
+
+    # -- download helpers -------------------------------------------------
+
+    def _wait_seconds(self, response, attempt):
+        retry_after = response.headers.get("Retry-After", "")
+        try:
+            return min(self.MAX_WAIT, max(self.DELAY_SECONDS, int(retry_after)))
+        except ValueError:
+            return min(self.MAX_WAIT, self.DELAY_SECONDS * (2 ** attempt))
+
+    def _fetch_one(self, sess, url):
+        """Return response bytes, retrying politely on 429/5xx. None on give-up."""
+        for attempt in range(self.MAX_ATTEMPTS):
+            r = sess.get(url, timeout=30)
+            if r.status_code == 200 and r.content:
+                return r.content
+            if r.status_code in (429, 500, 502, 503, 504):
+                wait = self._wait_seconds(r, attempt)
+                self.stdout.write(self.style.WARNING(
+                    f"  got {r.status_code}, waiting {wait:.0f}s "
+                    f"(attempt {attempt + 1}/{self.MAX_ATTEMPTS})"))
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+        return None
+
+    def _download_all(self, raw_dir, force):
+        """Fetch source .ogg files into raw_dir; skip ones already present."""
+        sess = requests.Session()
+        sess.headers["User-Agent"] = self.USER_AGENT
+        missing = []
+        for fname, m in sorted(FILE_SOURCES.items()):
+            path = os.path.join(raw_dir, fname)
+            if not force and os.path.exists(path) and os.path.getsize(path) > 0:
+                self.stdout.write(f"kept       {fname} (already downloaded)")
+                continue
+            content = self._fetch_one(sess, m["url"])
+            if content is None:
+                missing.append(fname)
+                self.stdout.write(self.style.WARNING(f"FAILED     {fname} (will retry on next run)"))
+            else:
+                with open(path, "wb") as fh:
+                    fh.write(content)
+                self.stdout.write(f"downloaded {fname} ({len(content)} bytes)")
+            time.sleep(self.DELAY_SECONDS)
+        return missing
+
+    # -- processing helpers ------------------------------------------------
+
+    def _process_graphemes(self, raw_dir, force):
+        done = 0
+        for g, fname in sorted(GRAPHEME_FILES.items()):
+            src_path = os.path.join(raw_dir, fname)
+            out_path = os.path.join(SEED_DIR, f"{g}.mp3")
+            if not os.path.exists(src_path):
+                continue
+            if force or not os.path.exists(out_path):
+                process_ogg_to_mp3(src_path, out_path)
+                self.stdout.write(f"processed  {g}.mp3")
+            done += 1
+        return done
+
+    def _build_combos(self, force):
+        for g, parts in sorted(COMBOS.items()):
+            part_paths = [os.path.join(SEED_DIR, f"{p}.mp3") for p in parts]
+            out_path = os.path.join(SEED_DIR, f"{g}.mp3")
+            if not all(os.path.exists(pp) for pp in part_paths):
+                continue
+            if force or not os.path.exists(out_path):
+                concat_mp3s(part_paths, out_path)
+                self.stdout.write(f"combined   {g}.mp3 from {'+'.join(parts)}")
+
+    # -- entry point ---------------------------------------------------------
 
     def handle(self, *args, **opts):
+        force = opts.get("force", False)
         os.makedirs(SEED_DIR, exist_ok=True)
-        sess = requests.Session()
-        sess.headers["User-Agent"] = "PhonicClass/1.0 (classroom phonics app)"
-        with tempfile.TemporaryDirectory() as tmp:
-            raw = {}
-            for fname, m in sorted(FILE_SOURCES.items()):
-                r = sess.get(m["url"], timeout=20)
-                r.raise_for_status()
-                p = os.path.join(tmp, fname)
-                open(p, "wb").write(r.content)
-                raw[fname] = p
-                self.stdout.write(f"downloaded {fname} ({len(r.content)} bytes)")
-            for g, fname in sorted(GRAPHEME_FILES.items()):
-                process_ogg_to_mp3(raw[fname], os.path.join(SEED_DIR, f"{g}.mp3"))
-                self.stdout.write(f"processed  {g}.mp3")
-            for g, parts in sorted(COMBOS.items()):
-                concat_mp3s([os.path.join(SEED_DIR, f"{p}.mp3") for p in parts],
-                            os.path.join(SEED_DIR, f"{g}.mp3"))
-                self.stdout.write(f"combined   {g}.mp3 from {'+'.join(parts)}")
+        raw_dir = os.path.join(SEED_DIR, "_raw")
+        os.makedirs(raw_dir, exist_ok=True)
+
+        missing = self._download_all(raw_dir, force)
+        self._process_graphemes(raw_dir, force)
+        self._build_combos(force)
+
+        if missing:
+            self.stdout.write(self.style.WARNING(
+                f"{len(missing)} file(s) still missing: {', '.join(sorted(missing))}\n"
+                "Run 'python manage.py fetchseedsounds' again later to resume - "
+                "already-downloaded files are kept and skipped."))
+            return
         write_attribution(os.path.join(SEED_DIR, "ATTRIBUTION.md"))
         self.stdout.write(self.style.SUCCESS(
-            "seed_audio ready. Now run: python manage.py seedsounds"))
+            "seed_audio complete. Now run: python manage.py seedsounds"))

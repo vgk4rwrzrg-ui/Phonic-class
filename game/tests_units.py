@@ -8,6 +8,10 @@ from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
+import io
+import os
+import tempfile
+from django.core.management.color import color_style
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from game import jsonapi, phrases, tts
@@ -428,3 +432,54 @@ class FetchSeedSoundsTests(SimpleTestCase):
         with mock.patch.object(f, "_run_ffmpeg") as run:
             f.concat_mp3s(["K.mp3", "S.mp3"], "X.mp3")
         self.assertIn("concat=n=2:v=0:a=1", " ".join(run.call_args[0][0]))
+
+
+class FetchSeedSoundsResumeTests(SimpleTestCase):
+    """The downloader must be polite (UA, delays), retry 429s, and resume."""
+
+    def _cmd(self, tmpdir):
+        from game.management.commands import fetchseedsounds as f
+        cmd = f.Command()
+        cmd.DELAY_SECONDS = 0
+        cmd.stdout = io.StringIO()
+        cmd.style = color_style()
+        return cmd, f
+
+    def test_skips_files_already_downloaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd, f = self._cmd(tmp)
+            fname = sorted(f.FILE_SOURCES)[0]
+            open(os.path.join(tmp, fname), "wb").write(b"ogg")
+            with mock.patch.object(f.requests, "Session") as S:
+                S.return_value.get.return_value = mock.Mock(
+                    status_code=200, content=b"data", headers={})
+                cmd._download_all(tmp, force=False)
+                urls = [c.args[0] for c in S.return_value.get.call_args_list]
+            self.assertNotIn(f.FILE_SOURCES[fname]["url"], urls)
+            self.assertEqual(len(urls), len(f.FILE_SOURCES) - 1)
+
+    def test_retries_429_honouring_retry_after(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd, f = self._cmd(tmp)
+            throttled = mock.Mock(status_code=429, content=b"", headers={"Retry-After": "1"})
+            ok = mock.Mock(status_code=200, content=b"audio", headers={})
+            sess = mock.Mock()
+            sess.get.side_effect = [throttled, ok]
+            with mock.patch.object(f.time, "sleep") as slp:
+                data = cmd._fetch_one(sess, "http://x/f.ogg")
+            self.assertEqual(data, b"audio")
+            slp.assert_called_once_with(1)
+
+    def test_gives_up_after_max_attempts_and_reports_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd, f = self._cmd(tmp)
+            throttled = mock.Mock(status_code=429, content=b"", headers={})
+            with mock.patch.object(f.requests, "Session") as S, \
+                 mock.patch.object(f.time, "sleep"):
+                S.return_value.get.return_value = throttled
+                missing = cmd._download_all(tmp, force=False)
+            self.assertEqual(sorted(missing), sorted(f.FILE_SOURCES))
+
+    def test_user_agent_identifies_app(self):
+        from game.management.commands import fetchseedsounds as f
+        self.assertIn("github.com/vgk4rwrzrg-ui/Phonic-class", f.Command.USER_AGENT)
