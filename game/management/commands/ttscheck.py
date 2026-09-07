@@ -31,6 +31,12 @@ class Command(BaseCommand):
                 w(f"  -> file exists, readable, "
                   f"{'looks like a JSON key' if looks_json else 'does NOT look like JSON!'}")
         w(f"Voice           : {tts.VOICE_NAME}")
+        if not tts.voice_supports_phonemes():
+            self.stderr.write(
+                "  -> WARNING: this voice family IGNORES SSML <phoneme> IPA "
+                "hints,\n     so letters would say their NAMES (\"ess\") "
+                "instead of their SOUNDS (\"sss\").\n     Use a Wavenet or "
+                "Standard voice, e.g. GOOGLE_TTS_VOICE=en-US-Wavenet-F")
 
         w("\nTest 1: letter sound S (IPA phoneme)...")
         try:

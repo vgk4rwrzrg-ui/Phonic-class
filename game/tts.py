@@ -32,7 +32,41 @@ DIGRAPHS = {
 }
 TRIGRAPHS = {"igh", "tch", "dge", "ear", "air"}
 
-VOICE_NAME = os.environ.get("GOOGLE_TTS_VOICE", "en-US-Neural2-F")
+# Spoken respelling for each grapheme — kept in sync with the JS
+# LETTER_SOUNDS / DIGRAPH_SOUNDS / TRIGRAPH_SOUNDS fallback maps in game.html.
+# This text goes INSIDE the SSML <phoneme> tag: voices that honor the tag use
+# the IPA above, and any voice that ignores the tag reads this respelling —
+# so the worst case is "suh", never the letter name "ess".
+GRAPHEME_SAY = {
+    "A": "ah", "B": "buh", "C": "kuh", "D": "duh", "E": "eh", "F": "fuh",
+    "G": "guh", "H": "huh", "I": "ih", "J": "juh", "K": "kuh", "L": "luh",
+    "M": "muh", "N": "nuh", "O": "ah", "P": "puh", "Q": "kwuh", "R": "ruh",
+    "S": "suh", "T": "tuh", "U": "uh", "V": "vuh", "W": "wuh", "X": "ks",
+    "Y": "yuh", "Z": "zuh",
+    "SH": "shh", "CH": "chuh", "TH": "thuh", "CK": "kuh", "NG": "ing",
+    "QU": "kwuh", "WH": "wuh", "PH": "fuh",
+    "EE": "ee", "OO": "oo", "AI": "ay", "AY": "ay", "EA": "ee", "OA": "oh",
+    "IE": "eye", "OI": "oy", "OY": "oy", "OU": "ow", "OW": "ow",
+    "AU": "aw", "AW": "aw", "AR": "ar", "ER": "ur", "IR": "ur", "UR": "ur",
+    "OR": "or",
+    "IGH": "eye", "TCH": "chuh", "DGE": "juh", "EAR": "eer", "AIR": "air",
+}
+
+# Default voice MUST honor the SSML <phoneme> tag. WaveNet and Standard
+# voices do; Neural2 / Studio / Journey / Chirp voices IGNORE it and read
+# the letter name instead ("S" -> "ess"), which is exactly wrong for
+# phonics. Override with GOOGLE_TTS_VOICE only if the voice supports IPA.
+VOICE_NAME = os.environ.get("GOOGLE_TTS_VOICE", "en-US-Wavenet-F")
+
+# Voice families known to ignore <phoneme>; ttscheck warns about these.
+PHONEME_UNSUPPORTED_FAMILIES = ("Neural2", "Studio", "Journey", "Chirp",
+                                "Polyglot", "News", "Casual")
+
+
+def voice_supports_phonemes(voice_name=None):
+    """Best-effort check that a voice honors SSML <phoneme> IPA hints."""
+    name = voice_name or VOICE_NAME
+    return not any(f in name for f in PHONEME_UNSUPPORTED_FAMILIES)
 
 
 def split_graphemes(text):
@@ -77,19 +111,20 @@ def synthesize(grapheme):
     """
     g = (grapheme or "").strip().upper()
     ipa = GRAPHEME_IPA.get(g)
+    say = GRAPHEME_SAY.get(g, g.lower())
     if not ipa:
-        return _synth_ssml(f"<speak>{g.lower()}</speak>")
+        return _synth_ssml(f"<speak>{say}</speak>")
     try:
         return _synth_ssml(
-            f'<speak><phoneme alphabet="ipa" ph="{ipa}">{g}</phoneme></speak>')
+            f'<speak><phoneme alphabet="ipa" ph="{ipa}">{say}</phoneme></speak>')
     except Exception:
-        if "\u02d0" not in ipa.encode("unicode_escape").decode():
+        if "\u02d0" not in ipa:  # no length mark -> nothing to strip, re-raise
             raise
         # Retry: strip the length mark, stretch with prosody instead.
-        plain = ipa.replace("\u02d0", "").replace("ː", "")
+        plain = ipa.replace("\u02d0", "")
         return _synth_ssml(
             f'<speak><prosody rate="60%">'
-            f'<phoneme alphabet="ipa" ph="{plain}">{g}</phoneme>'
+            f'<phoneme alphabet="ipa" ph="{plain}">{say}</phoneme>'
             f"</prosody></speak>")
 
 

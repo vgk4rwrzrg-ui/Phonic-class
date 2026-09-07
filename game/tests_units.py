@@ -247,3 +247,48 @@ class PhraseRegistryTests(TestCase):
         self.assertEqual(registry["great-job"], "Great job!")
         self.assertIn("try-the-sh-balloon", registry)
         self.assertGreaterEqual(len(registry), len(phrases.PRAISE))
+
+
+class PhonicSynthesisTests(TestCase):
+    """The SSML sent to Google must produce phonic SOUNDS, not letter names."""
+
+    def test_every_grapheme_has_a_respelling(self):
+        missing = set(tts.GRAPHEME_IPA) - set(tts.GRAPHEME_SAY)
+        self.assertEqual(missing, set())
+
+    def test_no_respelling_is_a_bare_letter_name(self):
+        # A single capital letter inside <phoneme> is what caused "ess"/"pee"
+        for g, say in tts.GRAPHEME_SAY.items():
+            self.assertNotEqual(say.upper(), g if len(g) == 1 else "",
+                                f"{g} respelling must not be the letter itself")
+
+    def test_synthesize_ssml_uses_ipa_and_respelling(self):
+        from unittest.mock import patch
+        with patch("game.tts._synth_ssml", return_value=b"MP3") as m:
+            tts.synthesize("S")
+        ssml = m.call_args[0][0]
+        self.assertIn('ph="s\u02d0"', ssml)       # IPA "sss" phoneme
+        self.assertIn(">suh<", ssml)               # tag-ignoring voices say this
+        self.assertNotIn(">S<", ssml)              # never the bare letter -> "ess"
+
+    def test_synthesize_retry_strips_length_mark_keeps_respelling(self):
+        from unittest.mock import patch
+        calls = []
+        def fake(ssml):
+            calls.append(ssml)
+            if len(calls) == 1:
+                raise RuntimeError("INVALID_ARGUMENT")
+            return b"MP3"
+        with patch("game.tts._synth_ssml", side_effect=fake):
+            tts.synthesize("M")
+        self.assertEqual(len(calls), 2)
+        self.assertIn('ph="m"', calls[1])          # length mark stripped
+        self.assertIn(">muh<", calls[1])
+        self.assertIn('prosody rate="60%"', calls[1])
+
+    def test_default_voice_supports_phonemes(self):
+        self.assertTrue(tts.voice_supports_phonemes(tts.VOICE_NAME))
+        for bad in ("en-US-Neural2-F", "en-US-Studio-O", "en-US-Journey-D"):
+            self.assertFalse(tts.voice_supports_phonemes(bad), bad)
+        for good in ("en-US-Wavenet-F", "en-GB-Standard-A"):
+            self.assertTrue(tts.voice_supports_phonemes(good), good)
