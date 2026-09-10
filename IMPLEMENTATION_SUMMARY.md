@@ -320,3 +320,43 @@ git diff --stat HEAD~1 HEAD
 The balloon challenge and boss fight features have been fully implemented according to specifications. All 36 tests pass, the code is committed to the `balloon-and-boss-game` branch, and the implementation preserves all existing game functionality while adding engaging new challenges for students.
 
 The feature is production-ready and awaiting review for merge to main.
+
+
+---
+
+## FIX: REPEATED LETTERS / GRAPHEMES IN A WORD (edge case from testing)
+
+**Reported:** in a word with the same letter twice (e.g. **BULL**), dropping the
+"wrong" copy of the L into the third box was scored as a miss — the child saw
+*"So close! Try again"* even though the letter shown was correct.
+
+**Cause:** both game modes matched the *tile identity* (which copy of the letter
+it was) instead of the *grapheme on the tile*.
+
+- `game.html` → `handleDrop()` required `slot === tile.slot`, so tile #4's L was
+  rejected by box #3.
+- `game.html` → `bossTileTap()` required `o.i === bossState.boxIdx` as well as a
+  grapheme match, giving the same false miss in the Baron Blot fight.
+
+**Fix:** matching is now grapheme-based in both modes.
+
+- `setupRound()` records `roundUnits` — the grapheme each box needs, by slot.
+- `handleDrop()` accepts any non-decoy tile whose letter equals
+  `roundUnits[slot]` for an unfilled box, then records where that copy landed.
+- `bossTileTap()` accepts any non-decoy tile whose grapheme equals the current
+  box's grapheme.
+- Balloon rounds already compared by value (`b.g === expected`) and are unchanged.
+
+Decoy tiles, genuinely wrong letters, the `/api/miss/` trouble-sound reporting,
+toasts, points/rewards, progress tracking and the teacher workflow are all
+untouched.
+
+**Tests:** `game/tests_duplicate_graphemes.py` — template pins plus behavioural
+tests that execute the real `handleDrop`/`wordToUnits` code from `game.html`
+under node with a stub DOM (BULL either-L-first, EGG, TOFFEE, LITTLE, plus
+wrong-letter and decoy still failing).
+
+```bash
+python manage.py test game.tests_duplicate_graphemes   # Ran 11 tests - OK
+python manage.py test game                             # Ran 237 tests - OK
+```

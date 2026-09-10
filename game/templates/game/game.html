@@ -481,6 +481,7 @@ var HINTS = ['Almost!', 'Try again!', 'So close!', 'You can do it!',
   'Good try — listen again!', 'Not quite — try another spot!'];
 
 var wordIndex = 0, speechRate = 1.0, tiles = [], roundDone = false;
+var roundUnits = [];   // grapheme each box needs, by slot index
 (function () { // shuffle word order once per session
   for (var i = WORDS.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1));
@@ -644,6 +645,7 @@ function shuffle(a) {
 
 function setupRound() {
   roundDone = false;
+  roundUnits = [];
   var boxesEl = document.getElementById('boxes');
   var tilesEl = document.getElementById('tiles');
   boxesEl.innerHTML = ''; tilesEl.innerHTML = '';
@@ -651,6 +653,9 @@ function setupRound() {
   if (!w) { boxesEl.innerHTML = '<p class="empty">No words this week yet - ask your teacher!</p>'; return; }
 
   var units = wordToUnits(w.text);
+  // Graphemes each box needs, in order.  Words repeat sounds (BULL, EGG, MOON,
+  // SHEEP) so matching is done on the grapheme, not on which tile copy it is.
+  roundUnits = units.map(function (u) { return u.g; });
   tiles = units.map(function (u, i) { return { letter: u.g, sound: u.sound, slot: i, placed: false }; });
   makeDecoys(units, decoyCountFor(units)).forEach(function (d) {
     tiles.push({ letter: d.g, sound: d.sound, slot: -1, placed: false, decoy: true });
@@ -717,7 +722,12 @@ function handleDrop(el, tile, x, y) {
   });
   if (!hit) { snapBack(el, false); return; }
   var slot = parseInt(hit.dataset.slot, 10);
-  if (slot === tile.slot && !hit.classList.contains('filled')) {
+  // Repeated graphemes (BULL, EGG, MOON) are interchangeable: any tile showing
+  // the grapheme this box needs is correct, whichever copy the child dragged.
+  var needed = roundUnits[slot];
+  var fits = !tile.decoy && needed !== undefined && tile.letter === needed;
+  if (fits && !hit.classList.contains('filled')) {
+    tile.slot = slot;   // remember where this copy actually landed
     tile.placed = true;
     el.style.visibility = 'hidden'; el.style.transform = '';
     hit.classList.add('filled');
@@ -1668,7 +1678,10 @@ function nextBossWord() {
 function bossTileTap(btn, o) {
   if (!bossState || bossState.busy || btn.disabled) return;
   var expected = bossState.units[bossState.boxIdx];
-  if (o.g === expected.g && o.i === bossState.boxIdx) {
+  // Match on the grapheme only: a word may need the same sound twice (BULL,
+  // EGG), and either copy of that tile is a correct answer for this box.
+  if (!o.decoy && expected && o.g === expected.g) {
+    o.i = bossState.boxIdx;   // this copy now owns the box it filled
     btn.disabled = true;
     var box = document.getElementById('bossBoxes').children[bossState.boxIdx];
     box.textContent = o.g;
